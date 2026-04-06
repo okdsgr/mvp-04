@@ -1,8 +1,8 @@
 extends Area2D
 
-enum Type { MULTI, SPEED, SHIELD, PIERCE }
+enum Type { SHIELD, PIERCE }
 
-var item_type : Type  = Type.MULTI
+var item_type : Type  = Type.SHIELD
 var _time     : float = 0.0
 
 const FALL_SPEED  : float = 60.0
@@ -11,17 +11,13 @@ const FLOAT_FREQ  : float = 2.0
 const LIFESPAN    : float = 8.0
 
 const TEXTURES : Array = [
-	"res://assets/sprites/item_multi.png",
-	"res://assets/sprites/item_speed.png",
 	"res://assets/sprites/item_shield.png",
 	"res://assets/sprites/item_pierce.png",
 ]
 
 const COLORS : Array = [
-	Color(0.3, 0.6, 1.0, 1.0),
-	Color(1.0, 0.85, 0.1, 1.0),
-	Color(0.2, 0.9, 0.4, 1.0),
-	Color(1.0, 0.3, 0.3, 1.0),
+	Color(0.2, 0.9, 0.4, 1.0),  # SHIELD 緑
+	Color(1.0, 0.3, 0.3, 1.0),  # PIERCE 赤
 ]
 
 func _ready() -> void:
@@ -38,11 +34,10 @@ func _ready() -> void:
 	col.shape = shape
 	add_child(col)
 
-	# スプライト
 	var sprite := Sprite2D.new()
-	sprite.name = "Sprite2D"
+	sprite.name    = "Sprite2D"
 	sprite.texture = load(TEXTURES[item_type])
-	sprite.scale = Vector2(0.18, 0.18)
+	sprite.scale   = Vector2(0.18, 0.18)
 	add_child(sprite)
 
 func _on_body_entered(body: Node) -> void:
@@ -51,7 +46,6 @@ func _on_body_entered(body: Node) -> void:
 		queue_free()
 
 func _draw() -> void:
-	# スプライトの下にグロー座布団
 	var col : Color = COLORS[item_type]
 	draw_circle(Vector2.ZERO, 22.0, Color(col.r, col.g, col.b, 0.15))
 	draw_circle(Vector2.ZERO, 14.0, Color(col.r, col.g, col.b, 0.25))
@@ -61,7 +55,6 @@ func _physics_process(delta: float) -> void:
 	position.y += FALL_SPEED * delta
 	position.x += sin(_time * FLOAT_FREQ) * FLOAT_AMP * delta
 
-	# スプライトをゆっくり回転
 	if has_node("Sprite2D"):
 		$Sprite2D.rotation = _time * 1.2
 
@@ -78,11 +71,7 @@ func _physics_process(delta: float) -> void:
 
 func _apply_effect(player: Node) -> void:
 	match item_type:
-		Type.MULTI:
-			player.bonus_bullets  = player.bonus_bullets + 1
-		Type.SPEED:
-			player.speed_boost_timer = 5.0
 		Type.SHIELD:
-			player.has_shield     = true
+			player.has_shield   = true
 		Type.PIERCE:
-			player.pierce_count   = player.pierce_count + 1
+			player.pierce_count = player.pierce_count + 1

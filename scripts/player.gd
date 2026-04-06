@@ -14,8 +14,8 @@ var hp              : int     = 3
 var invincible_timer: float   = 0.0
 var is_invincible   : bool    = false
 
-var bonus_bullets     : int   = 0
-var speed_boost_timer : float = 0.0
+var bonus_bullets     : int   = 0  # 廃止（MULTI削除）
+var speed_boost_timer : float = 0.0  # 廃止（SPEED削除）
 var has_shield        : bool  = false
 var pierce_count      : int   = 0
 

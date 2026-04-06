@@ -1,39 +1,118 @@
 extends Area2D
 
-@export var is_white: bool = true
+@export var is_white : bool = true
 
 enum State { ORBITING_ENEMY, HOMING_PLAYER, ORBITING_PLAYER, FIRING }
 
-var state: State = State.ORBITING_ENEMY
-var orbit_center: Node2D = null
-var orbit_angle: float = 0.0
-var homing_target: Node2D = null
+var state        : State   = State.ORBITING_ENEMY
+var orbit_center : Node2D  = null
+var orbit_angle  : float   = 0.0
+var homing_target: Node2D  = null
 var grav_velocity: Vector2 = Vector2.ZERO
+var is_piercing  : bool    = false
 
-const ENEMY_ORBIT_RADIUS  := 65.0
-const PLAYER_ORBIT_RADIUS := 38.0
-const ORBIT_SPEED         := 1.05
-const FIRE_SPEED          := 540.0
-const HOMING_MAX_SPEED    := 1200.0   # 吸い寄せ最大速度
-const HOMING_STEER        := 12.0     # ステアリング強度（高いほど即反応）
-const SLOWDOWN_RADIUS     := 180.0    # この距離以下で減速開始
+const ENEMY_ORBIT_RADIUS  : float = 65.0
+const PLAYER_ORBIT_RADIUS : float = 38.0
+const ORBIT_SPEED         : float = 1.05
+const FIRE_SPEED          : float = 540.0
+const HOMING_MAX_SPEED    : float = 1200.0
+const HOMING_STEER        : float = 12.0
+const SLOWDOWN_RADIUS     : float = 180.0
+
+# 彗星の尾びれ用（過去位置を記録）
+const TAIL_LENGTH : int   = 18   # 記録する過去位置の数
+const TAIL_INTERVAL: float = 0.015 # 位置記録間隔
+var _tail_positions : Array = []
+var _tail_timer     : float = 0.0
+
+# レーザー用（PIERCE）
+var _laser_active  : bool  = false
+var _laser_timer   : float = 0.0
+var _laser_start   : Vector2 = Vector2.ZERO
+var _laser_end     : Vector2 = Vector2.ZERO
+const LASER_DURATION : float = 0.2
 
 func _ready() -> void:
 	add_to_group("bullets")
 
 func _draw() -> void:
-	var r := 7.0
+	var r : float = 7.0
+	var col_outer : Color
+	var col_mid   : Color
+	var col_core  : Color
+
 	if is_white:
-		draw_circle(Vector2.ZERO, r * 2.2, Color(1.0, 1.0, 1.0, 0.12))
-		draw_circle(Vector2.ZERO, r,        Color(1.0, 1.0, 1.0, 0.75))
-		draw_circle(Vector2.ZERO, r * 0.38, Color(1.0, 1.0, 1.0, 1.0))
+		col_outer = Color(1.0, 1.0, 1.0, 0.12)
+		col_mid   = Color(1.0, 1.0, 1.0, 0.75)
+		col_core  = Color(1.0, 1.0, 1.0, 1.0)
 	else:
-		draw_circle(Vector2.ZERO, r * 2.2, Color(0.7, 0.1, 1.0, 0.18))
-		draw_circle(Vector2.ZERO, r,        Color(0.85, 0.3, 1.0, 0.8))
-		draw_circle(Vector2.ZERO, r * 0.38, Color(1.0, 0.8, 1.0, 1.0))
+		col_outer = Color(0.7, 0.1, 1.0, 0.18)
+		col_mid   = Color(0.85, 0.3, 1.0, 0.8)
+		col_core  = Color(1.0, 0.8, 1.0, 1.0)
+
+	# FIRING中: 彗星の尾びれを描画
+	if state == State.FIRING and _tail_positions.size() >= 2:
+		if is_piercing:
+			# PIERCEはレーザー（尾びれなし、レーザー自体は別描画）
+			pass
+		else:
+			# 通常弾の彗星尾びれ
+			for i: int in _tail_positions.size() - 1:
+				var progress : float = float(i) / float(_tail_positions.size())
+				var alpha    : float = progress * 0.7
+				var width    : float = (1.0 - progress) * r * 1.2
+				var p0 : Vector2 = to_local(_tail_positions[i])
+				var p1 : Vector2 = to_local(_tail_positions[i + 1])
+				var tail_col : Color = Color(col_mid.r, col_mid.g, col_mid.b, alpha)
+				draw_line(p0, p1, tail_col, width)
+
+	# レーザーエフェクト（PIERCE, ヒット後フェードアウト）
+	if _laser_active:
+		var progress : float = _laser_timer / LASER_DURATION
+		var alpha    : float = 1.0 - progress
+		var width    : float = maxf(1.0, 4.0 * (1.0 - progress))
+		var lstart   : Vector2 = to_local(_laser_start)
+		var lend     : Vector2 = to_local(_laser_end)
+
+		# 細くなりながら消える
+		draw_line(lstart, lend, Color(col_mid.r, col_mid.g, col_mid.b, alpha * 0.6), width * 2.0)
+		draw_line(lstart, lend, Color(1.0, 1.0, 1.0, alpha), width)
+
+		# 破線（後半）
+		if progress > 0.5:
+			var dash_alpha : float = alpha * 0.5
+			var seg_len    : float = 12.0
+			var total_len  : float = lstart.distance_to(lend)
+			var dir        : Vector2 = (lend - lstart).normalized()
+			var drawn      : float = 0.0
+			var draw_seg   : bool  = true
+			while drawn < total_len:
+				var seg_end_dist : float = minf(drawn + seg_len, total_len)
+				if draw_seg:
+					draw_line(
+						lstart + dir * drawn,
+						lstart + dir * seg_end_dist,
+						Color(col_mid.r, col_mid.g, col_mid.b, dash_alpha),
+						width * 0.5
+					)
+				drawn    = drawn + seg_len
+				draw_seg = not draw_seg
+		return
+
+	draw_circle(Vector2.ZERO, r * 2.2, col_outer)
+	draw_circle(Vector2.ZERO, r,        col_mid)
+	draw_circle(Vector2.ZERO, r * 0.38, col_core)
 
 func _physics_process(delta: float) -> void:
 	queue_redraw()
+
+	# レーザーフェードアウト処理
+	if _laser_active:
+		_laser_timer += delta
+		if _laser_timer >= LASER_DURATION:
+			queue_free()
+		return
+
 	match state:
 		State.ORBITING_ENEMY:
 			if not is_instance_valid(orbit_center):
@@ -48,26 +127,21 @@ func _physics_process(delta: float) -> void:
 				queue_free()
 				return
 			orbit_angle += ORBIT_SPEED * delta
-			var target_pos: Vector2 = orbit_center.global_position + \
+			var target_pos : Vector2 = orbit_center.global_position + \
 				Vector2(cos(orbit_angle), sin(orbit_angle)) * PLAYER_ORBIT_RADIUS
-			var to_target: Vector2 = target_pos - global_position
-			var dist: float = to_target.length()
-
+			var to_target  : Vector2 = target_pos - global_position
+			var dist       : float   = to_target.length()
 			if dist < 5.0:
 				state = State.ORBITING_PLAYER
 				grav_velocity = Vector2.ZERO
 			else:
-				# seek-with-arrival: 近づくほど速度を落とす
-				var desired_speed: float = HOMING_MAX_SPEED
+				var desired_speed : float = HOMING_MAX_SPEED
 				if dist < SLOWDOWN_RADIUS:
 					desired_speed = HOMING_MAX_SPEED * (dist / SLOWDOWN_RADIUS)
-				desired_speed = max(desired_speed, 80.0)  # 最低速度
-
-				var desired_vel: Vector2 = to_target.normalized() * desired_speed
-				# 現在速度を目標速度へステアリング
-				var steering: Vector2 = (desired_vel - grav_velocity) * HOMING_STEER * delta
+				desired_speed = maxf(desired_speed, 80.0)
+				var desired_vel : Vector2 = to_target.normalized() * desired_speed
+				var steering    : Vector2 = (desired_vel - grav_velocity) * HOMING_STEER * delta
 				grav_velocity += steering
-				# 最大速度クランプ
 				if grav_velocity.length() > HOMING_MAX_SPEED:
 					grav_velocity = grav_velocity.normalized() * HOMING_MAX_SPEED
 				global_position += grav_velocity * delta
@@ -79,26 +153,109 @@ func _physics_process(delta: float) -> void:
 			orbit_angle += ORBIT_SPEED * 1.3 * delta
 			global_position = orbit_center.global_position + \
 				Vector2(cos(orbit_angle), sin(orbit_angle)) * PLAYER_ORBIT_RADIUS
+			_tail_positions.clear()
 
 		State.FIRING:
-			if not is_instance_valid(homing_target):
-				queue_free()
-				return
-			if global_position.distance_to(homing_target.global_position) < 22.0:
-				homing_target.take_hit()
-				queue_free()
-				return
-			global_position += (homing_target.global_position - global_position).normalized() * FIRE_SPEED * delta
+			if is_piercing:
+				_update_laser(delta)
+			else:
+				_update_comet(delta)
+
+func _update_comet(delta: float) -> void:
+	if not is_instance_valid(homing_target):
+		queue_free()
+		return
+	# 尾びれ用の位置記録
+	_tail_timer += delta
+	if _tail_timer >= TAIL_INTERVAL:
+		_tail_timer = 0.0
+		_tail_positions.push_front(global_position)
+		if _tail_positions.size() > TAIL_LENGTH:
+			_tail_positions.pop_back()
+
+	if global_position.distance_to(homing_target.global_position) < 22.0:
+		homing_target.take_hit()
+		queue_free()
+		return
+	global_position += (homing_target.global_position - global_position).normalized() * FIRE_SPEED * delta
+
+func _update_laser(delta: float) -> void:
+	# レーザー：直線で画面端まで貫く
+	if not is_instance_valid(homing_target):
+		queue_free()
+		return
+
+	var dir      : Vector2 = (homing_target.global_position - global_position).normalized()
+	var rect     : Rect2   = get_viewport_rect()
+	var laser_end: Vector2 = _calc_screen_edge(global_position, dir, rect)
+
+	# ヒット判定：直線上の敵に当たっているか
+	var enemies : Array = get_tree().get_nodes_in_group("enemies")
+	for e : Node in enemies:
+		if not is_instance_valid(e):
+			continue
+		if is_white == e.is_white:
+			continue
+		var e2d : Node2D = e as Node2D
+		if e2d == null:
+			continue
+		# 直線との距離判定
+		var closest : Vector2 = _closest_point_on_segment(global_position, laser_end, e2d.global_position)
+		if closest.distance_to(e2d.global_position) < 40.0:
+			e.take_hit()
+			# ヒット後はレーザーフェードに移行
+			_start_laser_fade(global_position, laser_end)
+			return
+
+	# まだヒットしていない→ターゲットまで移動
+	global_position += dir * FIRE_SPEED * delta
+
+	# 画面外に出たら消滅
+	if not rect.has_point(global_position):
+		queue_free()
+
+func _start_laser_fade(start: Vector2, end: Vector2) -> void:
+	_laser_active = true
+	_laser_timer  = 0.0
+	_laser_start  = start
+	_laser_end    = end
+
+func _calc_screen_edge(origin: Vector2, dir: Vector2, rect: Rect2) -> Vector2:
+	var best_t : float = 10000.0
+	if abs(dir.x) > 0.001:
+		var t1 : float = (rect.position.x - origin.x) / dir.x
+		var t2 : float = (rect.end.x - origin.x) / dir.x
+		if t1 > 0.0:
+			best_t = minf(best_t, t1)
+		if t2 > 0.0:
+			best_t = minf(best_t, t2)
+	if abs(dir.y) > 0.001:
+		var t3 : float = (rect.position.y - origin.y) / dir.y
+		var t4 : float = (rect.end.y - origin.y) / dir.y
+		if t3 > 0.0:
+			best_t = minf(best_t, t3)
+		if t4 > 0.0:
+			best_t = minf(best_t, t4)
+	return origin + dir * best_t
+
+func _closest_point_on_segment(a: Vector2, b: Vector2, p: Vector2) -> Vector2:
+	var ab  : Vector2 = b - a
+	var len2: float   = ab.length_squared()
+	if len2 < 0.001:
+		return a
+	var t : float = clamp((p - a).dot(ab) / len2, 0.0, 1.0)
+	return a + ab * t
 
 func attract_to_player(player: Node2D) -> void:
-	orbit_center = player
-	# 初速は控えめに（過去の問題: 初速が速すぎて画面外）
-	var to_player: Vector2 = player.global_position - global_position
+	orbit_center  = player
+	var to_player : Vector2 = player.global_position - global_position
 	grav_velocity = to_player.normalized() * 200.0
-	state = State.HOMING_PLAYER
+	state         = State.HOMING_PLAYER
+	_tail_positions.clear()
 
 func fire_at(target: Node2D) -> void:
 	homing_target = target
-	orbit_center = null
+	orbit_center  = null
 	grav_velocity = Vector2.ZERO
-	state = State.FIRING
+	state         = State.FIRING
+	_tail_positions.clear()
