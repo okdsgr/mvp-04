@@ -1,3 +1,13 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Godot auto-generated
+*.import
+.godot/
+*.uid
+# Old root scripts
+enemy.gd
+main.gd
+player.gd
+soul.gd
