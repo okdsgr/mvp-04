@@ -13,9 +13,10 @@ var grav_velocity: Vector2 = Vector2.ZERO
 const ENEMY_ORBIT_RADIUS  := 65.0
 const PLAYER_ORBIT_RADIUS := 38.0
 const ORBIT_SPEED         := 1.05
-const FIRE_SPEED          := 270.0
-const GRAV_CONSTANT       := 2000000.0  # 引力定数（大きいほど強い引力）
-const GRAV_MAX_SPEED      := 800.0      # 最大速度上限
+const FIRE_SPEED          := 540.0
+const HOMING_MAX_SPEED    := 1200.0   # 吸い寄せ最大速度
+const HOMING_STEER        := 12.0     # ステアリング強度（高いほど即反応）
+const SLOWDOWN_RADIUS     := 180.0    # この距離以下で減速開始
 
 func _ready() -> void:
 	add_to_group("bullets")
@@ -56,13 +57,19 @@ func _physics_process(delta: float) -> void:
 				state = State.ORBITING_PLAYER
 				grav_velocity = Vector2.ZERO
 			else:
-				# 宇宙引力：抵抗なし、距離二乗に反比例した加速
-				var accel: float = GRAV_CONSTANT / max(dist * dist, 400.0)
-				grav_velocity += to_target.normalized() * accel * delta
-				# 最大速度クランプのみ
-				var spd: float = grav_velocity.length()
-				if spd > GRAV_MAX_SPEED:
-					grav_velocity = grav_velocity.normalized() * GRAV_MAX_SPEED
+				# seek-with-arrival: 近づくほど速度を落とす
+				var desired_speed: float = HOMING_MAX_SPEED
+				if dist < SLOWDOWN_RADIUS:
+					desired_speed = HOMING_MAX_SPEED * (dist / SLOWDOWN_RADIUS)
+				desired_speed = max(desired_speed, 80.0)  # 最低速度
+
+				var desired_vel: Vector2 = to_target.normalized() * desired_speed
+				# 現在速度を目標速度へステアリング
+				var steering: Vector2 = (desired_vel - grav_velocity) * HOMING_STEER * delta
+				grav_velocity += steering
+				# 最大速度クランプ
+				if grav_velocity.length() > HOMING_MAX_SPEED:
+					grav_velocity = grav_velocity.normalized() * HOMING_MAX_SPEED
 				global_position += grav_velocity * delta
 
 		State.ORBITING_PLAYER:
@@ -85,7 +92,9 @@ func _physics_process(delta: float) -> void:
 
 func attract_to_player(player: Node2D) -> void:
 	orbit_center = player
-	grav_velocity = Vector2.ZERO
+	# 初速は控えめに（過去の問題: 初速が速すぎて画面外）
+	var to_player: Vector2 = player.global_position - global_position
+	grav_velocity = to_player.normalized() * 200.0
 	state = State.HOMING_PLAYER
 
 func fire_at(target: Node2D) -> void:
