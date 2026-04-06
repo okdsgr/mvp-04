@@ -13,9 +13,30 @@ var hp              : int     = 3
 var invincible_timer: float   = 0.0
 var is_invincible   : bool    = false
 
+var bonus_bullets     : int   = 0
+var speed_boost_timer : float = 0.0
+var has_shield        : bool  = false
+var pierce_count      : int   = 0
+
+var _anim_time  : float = 0.0
+var _is_moving  : bool  = false
+var _walk_frame : int   = 0
+var _walk_timer : float = 0.0
+var _tex_idle   : Texture2D
+var _tex_walk   : Texture2D
+
+const WALK_INTERVAL : float = 0.2
+
 func _ready() -> void:
 	add_to_group("player")
 	target_pos = global_position
+	var sprite := Sprite2D.new()
+	sprite.name = "Sprite2D"
+	_tex_idle = load("res://assets/sprites/player_idle.png")
+	_tex_walk = load("res://assets/sprites/player_walk.png")
+	sprite.texture = _tex_idle
+	sprite.scale = Vector2(0.4, 0.4)
+	add_child(sprite)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -46,91 +67,138 @@ func _input(event: InputEvent) -> void:
 			target_pos = de.position
 
 func _physics_process(delta: float) -> void:
+	_anim_time += delta
 	if is_invincible:
 		invincible_timer = invincible_timer - delta
 		if invincible_timer <= 0.0:
 			is_invincible = false
-
+	if speed_boost_timer > 0.0:
+		speed_boost_timer = maxf(speed_boost_timer - delta, 0.0)
 	if is_holding:
 		attract_time = attract_time + delta
 		_attract_bullets()
-		var diff: Vector2 = target_pos - global_position
-		var dist: float   = diff.length()
+		var diff : Vector2 = target_pos - global_position
+		var dist : float   = diff.length()
 		if dist > 5.0:
 			global_position = global_position + diff.normalized() * MOVE_SPEED * delta
+			_is_moving = true
+		else:
+			_is_moving = false
 	else:
 		attract_time = 0.0
-
+		_is_moving = false
+	_update_sprite(delta)
 	if not is_invincible:
-		var enemies: Array = get_tree().get_nodes_in_group("enemies")
+		var enemies : Array = get_tree().get_nodes_in_group("enemies")
 		for i: int in enemies.size():
-			var e: Node = enemies[i]
+			var e   : Node   = enemies[i]
 			if not is_instance_valid(e):
 				continue
-			var e2d: Node2D = e as Node2D
+			var e2d : Node2D = e as Node2D
 			if e2d == null:
 				continue
 			if global_position.distance_to(e2d.global_position) < HIT_RADIUS:
 				_take_damage()
 				break
-
 	queue_redraw()
 
+func _update_sprite(delta: float) -> void:
+	if not has_node("Sprite2D"):
+		return
+	var sprite : Sprite2D = $Sprite2D
+	if _is_moving:
+		_walk_timer += delta
+		if _walk_timer >= WALK_INTERVAL:
+			_walk_timer = 0.0
+			_walk_frame = (_walk_frame + 1) % 2
+		sprite.texture = _tex_walk if _walk_frame == 1 else _tex_idle
+		sprite.position = Vector2(0.0, sin(_anim_time * 8.0) * 2.5)
+	else:
+		sprite.texture  = _tex_idle
+		sprite.position = Vector2(0.0, sin(_anim_time * 2.0) * 1.5)
+		_walk_timer     = 0.0
+
 func _attract_bullets() -> void:
-	var bullets: Array = get_tree().get_nodes_in_group("bullets")
+	var bullets : Array = get_tree().get_nodes_in_group("bullets")
 	for i: int in bullets.size():
-		var b: Node = bullets[i]
+		var b   : Node = bullets[i]
 		if not is_instance_valid(b):
 			continue
 		if b.state != b.State.ORBITING_ENEMY:
 			continue
-		var b2d: Node2D = b as Node2D
+		var b2d : Node2D = b as Node2D
 		if b2d == null:
 			continue
 		if global_position.distance_to(b2d.global_position) <= ATTRACT_RADIUS:
 			b.attract_to_player(self)
 
 func _fire_all_bullets() -> void:
-	# 発射済みの敵を記録して重複ターゲットを防ぐ
-	var targeted: Array = []
-	var bullets: Array = get_tree().get_nodes_in_group("bullets")
+	var targeted : Array = []
+	var bullets  : Array = get_tree().get_nodes_in_group("bullets")
+	var fire_speed_mult  : float = 2.0 if speed_boost_timer > 0.0 else 1.0
+	var pierce_remaining : int   = pierce_count
 	for i: int in bullets.size():
-		var b: Node = bullets[i]
+		var b : Node = bullets[i]
 		if not is_instance_valid(b):
 			continue
 		if b.state != b.State.ORBITING_PLAYER:
 			continue
-		var tgt: Node2D = _find_target_excluding(b, targeted)
+		var tgt : Node2D = _find_target_excluding(b, targeted)
+		if tgt != null:
+			if fire_speed_mult != 1.0:
+				b.set("fire_speed_mult", fire_speed_mult)
+			if pierce_remaining > 0:
+				b.set("is_piercing", true)
+				pierce_remaining -= 1
+			b.fire_at(tgt)
+			targeted.append(tgt)
+	var extra : int = bonus_bullets
+	for i: int in bullets.size():
+		if extra <= 0:
+			break
+		var b : Node = bullets[i]
+		if not is_instance_valid(b):
+			continue
+		if b.state != b.State.ORBITING_PLAYER:
+			continue
+		var tgt : Node2D = _find_target_excluding(b, targeted)
 		if tgt != null:
 			b.fire_at(tgt)
-			targeted.append(tgt)  # このターゲットを使用済みに
+			targeted.append(tgt)
+			extra -= 1
+	pierce_count = 0
 
 func _find_target_excluding(bullet: Node, excluded: Array) -> Node2D:
-	var best: Node2D     = null
-	var best_dist: float = INF
-	var enemies: Array   = get_tree().get_nodes_in_group("enemies")
+	var best      : Node2D = null
+	var best_dist : float  = INF
+	var enemies   : Array  = get_tree().get_nodes_in_group("enemies")
 	for i: int in enemies.size():
-		var e: Node = enemies[i]
+		var e   : Node   = enemies[i]
 		if not is_instance_valid(e):
 			continue
 		if bullet.is_white == e.is_white:
 			continue
 		if excluded.has(e):
-			continue  # 既にターゲット済みの敵はスキップ
-		var e2d: Node2D = e as Node2D
+			continue
+		var e2d : Node2D = e as Node2D
 		if e2d == null:
 			continue
-		var d: float = bullet.global_position.distance_to(e2d.global_position)
+		var d : float = bullet.global_position.distance_to(e2d.global_position)
 		if d < best_dist:
 			best_dist = d
 			best      = e2d
 	return best
 
 func _take_damage() -> void:
+	if has_shield:
+		has_shield       = false
+		is_invincible    = true
+		invincible_timer = INVINCIBLE_TIME
+		return
 	hp               = hp - 1
 	is_invincible    = true
 	invincible_timer = INVINCIBLE_TIME
-	var main: Node = get_tree().get_first_node_in_group("main")
+	var main : Node = get_tree().get_first_node_in_group("main")
 	if main != null and main.has_method("update_hp"):
 		main.update_hp(hp)
 	if hp <= 0:
@@ -142,24 +210,20 @@ func _on_death() -> void:
 
 func _draw() -> void:
 	if is_invincible:
-		var t: float = fmod(invincible_timer, 0.2)
+		var t : float = fmod(invincible_timer, 0.2)
 		if t < 0.1:
 			return
-
-	draw_circle(Vector2.ZERO, 22.0, Color(0.2, 0.5, 1.0, 0.22))
-	draw_circle(Vector2.ZERO, 16.0, Color(0.4, 0.7, 1.0, 0.5))
-	draw_circle(Vector2.ZERO, 10.0, Color(0.7, 0.9, 1.0, 0.9))
-	draw_circle(Vector2.ZERO,  5.0, Color(1.0, 1.0, 1.0, 1.0))
-
+	if has_shield:
+		draw_arc(Vector2.ZERO, 30.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.4, 0.8), 2.0)
+	if speed_boost_timer > 0.0:
+		draw_circle(Vector2.ZERO, 28.0, Color(1.0, 0.7, 0.1, 0.18))
+	draw_circle(Vector2.ZERO, 26.0, Color(0.2, 0.5, 1.0, 0.18))
+	draw_circle(Vector2.ZERO, 18.0, Color(0.4, 0.7, 1.0, 0.28))
 	if not is_holding:
 		return
-
 	for i: int in 3:
-		var phase: float = fmod(attract_time * 2.0 + float(i) * 0.33, 1.0)
-		var ring_r: float = 220.0 * (1.0 - phase)
-		var alpha: float  = phase * 0.5
-		draw_arc(Vector2.ZERO, ring_r, 0.0, TAU, 48,
-			Color(0.5, 0.8, 1.0, alpha), 1.5)
-
-	draw_circle(Vector2.ZERO, 28.0, Color(0.3, 0.6, 1.0, 0.35))
-	draw_circle(Vector2.ZERO, 22.0, Color(0.5, 0.8, 1.0, 0.4))
+		var phase  : float = fmod(attract_time * 2.0 + float(i) * 0.33, 1.0)
+		var ring_r : float = 220.0 * (1.0 - phase)
+		var alpha  : float = phase * 0.5
+		draw_arc(Vector2.ZERO, ring_r, 0.0, TAU, 48, Color(0.5, 0.8, 1.0, alpha), 1.5)
+	draw_circle(Vector2.ZERO, 28.0, Color(0.3, 0.6, 1.0, 0.3))
