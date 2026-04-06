@@ -2,19 +2,20 @@ extends Node2D
 
 # ===== WAVE設定 =====
 const WAVE_DEFINITIONS : Array = [
-	# [spawn_interval, batch, color_factor, type_weights(N/F/T/B), duration_sec]
-	[2.0, 2, 0.08, [0.85, 0.12, 0.03, 0.00], 20],  # Wave1: NORMALのみ、均等
-	[1.8, 2, 0.10, [0.78, 0.18, 0.04, 0.00], 20],  # Wave2
-	[1.5, 3, 0.14, [0.65, 0.25, 0.08, 0.02], 25],  # Wave3: FAST増
-	[1.3, 3, 0.22, [0.55, 0.28, 0.12, 0.05], 25],  # Wave4: 偏り開始
-	[1.1, 3, 0.32, [0.45, 0.30, 0.18, 0.07], 30],  # Wave5: 偏り強
-	[0.9, 4, 0.42, [0.38, 0.30, 0.22, 0.10], 30],  # Wave6: TOUGH増
-	[0.8, 4, 0.55, [0.30, 0.28, 0.28, 0.14], 35],  # Wave7: 大偏り
-	[0.7, 5, 0.68, [0.25, 0.28, 0.30, 0.17], 35],  # Wave8: ほぼ偏りMAX
-	[0.6, 5, 0.80, [0.20, 0.25, 0.35, 0.20], 999], # Wave9+: 無限
+	[2.0, 2, 0.08, [0.85, 0.12, 0.03, 0.00], 20],
+	[1.8, 2, 0.10, [0.78, 0.18, 0.04, 0.00], 20],
+	[1.5, 3, 0.14, [0.65, 0.25, 0.08, 0.02], 25],
+	[1.3, 3, 0.22, [0.55, 0.28, 0.12, 0.05], 25],
+	[1.1, 3, 0.32, [0.45, 0.30, 0.18, 0.07], 30],
+	[0.9, 4, 0.42, [0.38, 0.30, 0.22, 0.10], 30],
+	[0.8, 4, 0.55, [0.30, 0.28, 0.28, 0.14], 35],
+	[0.7, 5, 0.68, [0.25, 0.28, 0.30, 0.17], 35],
+	[0.6, 5, 0.80, [0.20, 0.25, 0.35, 0.20], 999],
 ]
 
 const MAX_ENEMIES : int = 200
+const WIN_W       : int = 405
+const WIN_H       : int = 720
 
 var enemy_scene:  PackedScene = preload("res://scenes/enemy.tscn")
 var bullet_scene: PackedScene = preload("res://scenes/soul.tscn")
@@ -39,14 +40,16 @@ var _color_factor   : float = 0.08
 var _type_weights   : Array = [0.85, 0.12, 0.03, 0.00]
 var _wave_duration  : float = 20.0
 
+func _apply_window_size() -> void:
+	DisplayServer.window_set_size(Vector2i(WIN_W, WIN_H))
+	var scr : Vector2i = DisplayServer.screen_get_size()
+	DisplayServer.window_set_position(Vector2i((scr.x - WIN_W) / 2, (scr.y - WIN_H) / 2))
+	print("window: ", DisplayServer.window_get_size())
+
 func _ready() -> void:
+	call_deferred("_apply_window_size")
 	randomize()
 	add_to_group("main")
-
-	# Mac起動時はウィンドウを2倍サイズに
-	if OS.get_name() == "macOS":
-		DisplayServer.window_set_size(Vector2i(1080, 1920))
-		DisplayServer.window_set_position(Vector2i(100, 50))
 
 	var hp_label := Label.new()
 	hp_label.name = "HPLabel"
