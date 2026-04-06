@@ -8,19 +8,23 @@ enum EnemyType { NORMAL, FAST, TOUGH, BOMBER }
 const BASE_SPEED    : float = 84.0
 const ATTRACT_DRIFT : float = 33.75
 const DROP_CHANCE   : float = 0.115
+const ANIM_INTERVAL : float = 0.35  # スプライト切り替え間隔
 
 var direction  : Vector2 = Vector2.DOWN
 var hp         : int     = 1
 var _radius    : float   = 44.0
 var _speed     : float   = BASE_SPEED
 var _anim_time : float   = 0.0
+var _anim_frame: int     = 0
+var _anim_timer: float   = 0.0
 
-var item_scene   : PackedScene = preload("res://scenes/item.tscn")
-var effect_scene : PackedScene = null
+var _tex_a : Texture2D = null  # 通常フレーム
+var _tex_b : Texture2D = null  # アニメフレーム（つぶれた形）
+
+var item_scene : PackedScene = preload("res://scenes/item.tscn")
 
 func _ready() -> void:
 	add_to_group("enemies")
-	effect_scene = load("res://scripts/effect.gd")
 
 	match enemy_type:
 		EnemyType.FAST:
@@ -42,8 +46,21 @@ func _ready() -> void:
 
 	direction = Vector2(randf_range(-0.4, 0.4), 1.0).normalized()
 
-	var tex_path : String = "res://assets/sprites/ghost_detailed.png" if is_white else "res://assets/sprites/ghost_black_retro_v3.png"
-	$Sprite2D.texture = load(tex_path)
+	# テクスチャ設定（ghost_detailed/ghost_black_retro が通常、animが変形フレーム）
+	if is_white:
+		_tex_a = load("res://assets/sprites/ghost_detailed.png")
+		if ResourceLoader.exists("res://assets/sprites/ghost_white_anim.png"):
+			_tex_b = load("res://assets/sprites/ghost_white_anim.png")
+		else:
+			_tex_b = _tex_a
+	else:
+		_tex_a = load("res://assets/sprites/ghost_black_retro_v3.png")
+		if ResourceLoader.exists("res://assets/sprites/ghost_black_anim.png"):
+			_tex_b = load("res://assets/sprites/ghost_black_anim.png")
+		else:
+			_tex_b = _tex_a
+
+	$Sprite2D.texture = _tex_a
 
 	match enemy_type:
 		EnemyType.FAST:
@@ -52,6 +69,9 @@ func _ready() -> void:
 			$Sprite2D.scale = Vector2(0.68, 0.68)
 		_:
 			$Sprite2D.scale = Vector2(0.5, 0.5)
+
+	# アニメ開始位相をずらしてバラバラに見せる
+	_anim_timer = randf_range(0.0, ANIM_INTERVAL)
 
 func _draw() -> void:
 	var base_alpha : float = 0.8 if enemy_type == EnemyType.TOUGH else 1.0
@@ -76,11 +96,18 @@ func _draw() -> void:
 			var pulse : float = abs(sin(_anim_time * 3.0))
 			draw_arc(Vector2.ZERO, _radius * 1.05, 0.0, TAU, 48, Color(1.0, 0.2, 0.2, pulse * 0.7), 2.0)
 			var s : float = _radius * 0.45
-			draw_line(Vector2(-s, -s), Vector2(s,  s), Color(1.0, 0.3, 0.3, 0.6 + pulse * 0.3), 2.0)
-			draw_line(Vector2( s, -s), Vector2(-s, s), Color(1.0, 0.3, 0.3, 0.6 + pulse * 0.3), 2.0)
+			draw_line(Vector2(-s, -s), Vector2( s,  s), Color(1.0, 0.3, 0.3, 0.6 + pulse * 0.3), 2.0)
+			draw_line(Vector2( s, -s), Vector2(-s,  s), Color(1.0, 0.3, 0.3, 0.6 + pulse * 0.3), 2.0)
 
 func _physics_process(delta: float) -> void:
-	_anim_time += delta
+	_anim_time  += delta
+	_anim_timer += delta
+
+	# スプライトフレーム切り替え
+	if _anim_timer >= ANIM_INTERVAL:
+		_anim_timer = 0.0
+		_anim_frame = (_anim_frame + 1) % 2
+		$Sprite2D.texture = _tex_b if _anim_frame == 1 else _tex_a
 
 	var rect : Rect2 = get_viewport_rect()
 	position = position + direction * _speed * delta
@@ -88,22 +115,19 @@ func _physics_process(delta: float) -> void:
 	if position.x < 0.0 or position.x > rect.size.x:
 		direction.x = direction.x * -1.0
 
-	# 左右反転：左向き（direction.x < 0）のとき flip_h = false（そのまま）
-	# 右向き（direction.x > 0）のとき flip_h = true（反転）
+	# 右向きで反転
 	$Sprite2D.flip_h = direction.x > 0.0
 
 	# ふわふわアニメ
-	var float_y   : float = sin(_anim_time * 2.2) * 3.0
-	var float_rot : float = sin(_anim_time * 1.8) * 0.04
 	match enemy_type:
 		EnemyType.FAST:
-			$Sprite2D.position = Vector2(0.0, sin(_anim_time * 4.5) * 2.0)
+			$Sprite2D.position = Vector2(0.0, sin(_anim_time * 5.0) * 2.0)
 		EnemyType.TOUGH:
 			$Sprite2D.position = Vector2(0.0, sin(_anim_time * 1.2) * 4.0)
 			$Sprite2D.rotation = sin(_anim_time * 1.0) * 0.06
 		_:
-			$Sprite2D.position = Vector2(0.0, float_y)
-			$Sprite2D.rotation = float_rot
+			$Sprite2D.position = Vector2(0.0, sin(_anim_time * 2.2) * 3.0)
+			$Sprite2D.rotation = sin(_anim_time * 1.8) * 0.04
 
 	if position.y > rect.size.y + 60.0:
 		var main : Node = get_tree().get_first_node_in_group("main")
@@ -141,10 +165,8 @@ func take_hit() -> void:
 	queue_free()
 
 func _spawn_effect(type: String) -> void:
-	if effect_scene == null:
-		return
 	var effect : Node2D = Node2D.new()
-	effect.set_script(effect_scene)
+	effect.set_script(load("res://scripts/effect.gd"))
 	get_tree().current_scene.add_child(effect)
 	effect.setup(type, global_position)
 
