@@ -8,7 +8,7 @@ enum EnemyType { NORMAL, FAST, TOUGH, BOMBER }
 const BASE_SPEED    : float = 84.0
 const ATTRACT_DRIFT : float = 33.75
 const DROP_CHANCE   : float = 0.115
-const ANIM_INTERVAL : float = 0.35  # スプライト切り替え間隔
+const ANIM_INTERVAL : float = 0.35
 
 var direction  : Vector2 = Vector2.DOWN
 var hp         : int     = 1
@@ -17,9 +17,10 @@ var _speed     : float   = BASE_SPEED
 var _anim_time : float   = 0.0
 var _anim_frame: int     = 0
 var _anim_timer: float   = 0.0
+var _base_scale: Vector2 = Vector2(0.5, 0.5)  # スケールをキャッシュ
 
-var _tex_a : Texture2D = null  # 通常フレーム
-var _tex_b : Texture2D = null  # アニメフレーム（つぶれた形）
+var _tex_a : Texture2D = null
+var _tex_b : Texture2D = null
 
 var item_scene : PackedScene = preload("res://scenes/item.tscn")
 
@@ -28,49 +29,38 @@ func _ready() -> void:
 
 	match enemy_type:
 		EnemyType.FAST:
-			hp      = 1
-			_radius = 24.0
-			_speed  = BASE_SPEED * 2.2
+			hp           = 1
+			_radius      = 24.0
+			_speed       = BASE_SPEED * 2.2
+			_base_scale  = Vector2(0.28, 0.28)
 		EnemyType.TOUGH:
-			hp      = 2
-			_radius = 58.0
-			_speed  = BASE_SPEED * 0.6
+			hp           = 2
+			_radius      = 58.0
+			_speed       = BASE_SPEED * 0.6
+			_base_scale  = Vector2(0.68, 0.68)
 		EnemyType.BOMBER:
-			hp      = 1
-			_radius = 44.0
-			_speed  = BASE_SPEED * 0.85
+			hp           = 1
+			_radius      = 44.0
+			_speed       = BASE_SPEED * 0.85
+			_base_scale  = Vector2(0.5, 0.5)
 		_:
-			hp      = 1
-			_radius = 44.0
-			_speed  = BASE_SPEED
+			hp           = 1
+			_radius      = 44.0
+			_speed       = BASE_SPEED
+			_base_scale  = Vector2(0.5, 0.5)
 
 	direction = Vector2(randf_range(-0.4, 0.4), 1.0).normalized()
 
-	# テクスチャ設定（ghost_detailed/ghost_black_retro が通常、animが変形フレーム）
 	if is_white:
 		_tex_a = load("res://assets/sprites/ghost_detailed.png")
-		if ResourceLoader.exists("res://assets/sprites/ghost_white_anim.png"):
-			_tex_b = load("res://assets/sprites/ghost_white_anim.png")
-		else:
-			_tex_b = _tex_a
+		_tex_b = load("res://assets/sprites/ghost_white_anim.png") if ResourceLoader.exists("res://assets/sprites/ghost_white_anim.png") else _tex_a
 	else:
 		_tex_a = load("res://assets/sprites/ghost_black_retro_v3.png")
-		if ResourceLoader.exists("res://assets/sprites/ghost_black_anim.png"):
-			_tex_b = load("res://assets/sprites/ghost_black_anim.png")
-		else:
-			_tex_b = _tex_a
+		_tex_b = load("res://assets/sprites/ghost_black_anim.png") if ResourceLoader.exists("res://assets/sprites/ghost_black_anim.png") else _tex_a
 
 	$Sprite2D.texture = _tex_a
+	$Sprite2D.scale   = _base_scale  # 初期スケールを設定
 
-	match enemy_type:
-		EnemyType.FAST:
-			$Sprite2D.scale = Vector2(0.28, 0.28)
-		EnemyType.TOUGH:
-			$Sprite2D.scale = Vector2(0.68, 0.68)
-		_:
-			$Sprite2D.scale = Vector2(0.5, 0.5)
-
-	# アニメ開始位相をずらしてバラバラに見せる
 	_anim_timer = randf_range(0.0, ANIM_INTERVAL)
 
 func _draw() -> void:
@@ -103,7 +93,7 @@ func _physics_process(delta: float) -> void:
 	_anim_time  += delta
 	_anim_timer += delta
 
-	# スプライトフレーム切り替え
+	# フレーム切り替え：テクスチャのみ、スケールは絶対に変えない
 	if _anim_timer >= ANIM_INTERVAL:
 		_anim_timer = 0.0
 		_anim_frame = (_anim_frame + 1) % 2
@@ -115,10 +105,9 @@ func _physics_process(delta: float) -> void:
 	if position.x < 0.0 or position.x > rect.size.x:
 		direction.x = direction.x * -1.0
 
-	# 右向きで反転
 	$Sprite2D.flip_h = direction.x > 0.0
 
-	# ふわふわアニメ
+	# ふわふわアニメ：positionのみ、scaleには絶対触れない
 	match enemy_type:
 		EnemyType.FAST:
 			$Sprite2D.position = Vector2(0.0, sin(_anim_time * 5.0) * 2.0)
@@ -154,9 +143,11 @@ func take_hit() -> void:
 
 	if enemy_type == EnemyType.BOMBER:
 		_explode()
-		_spawn_effect("explosion")
+		# 爆発はその場固定（velocity=ZERO）、大きめ
+		_spawn_effect("explosion", Vector2.ZERO)
 	else:
-		_spawn_effect("smoke")
+		# 煙は敵の移動ベクトルを引き継ぐ
+		_spawn_effect("smoke", direction * _speed)
 
 	_try_drop_item()
 	var main : Node = get_tree().get_first_node_in_group("main")
@@ -164,11 +155,11 @@ func take_hit() -> void:
 		main.on_enemy_died(self)
 	queue_free()
 
-func _spawn_effect(type: String) -> void:
+func _spawn_effect(type: String, vel: Vector2) -> void:
 	var effect : Node2D = Node2D.new()
 	effect.set_script(load("res://scripts/effect.gd"))
 	get_tree().current_scene.add_child(effect)
-	effect.setup(type, global_position)
+	effect.setup(type, global_position, vel)
 
 func _explode() -> void:
 	const BLAST_RADIUS : float = 160.0
