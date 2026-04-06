@@ -14,21 +14,18 @@ var hp              : int     = 3
 var invincible_timer: float   = 0.0
 var is_invincible   : bool    = false
 
-var bonus_bullets     : int   = 0  # 廃止（MULTI削除）
-var speed_boost_timer : float = 0.0  # 廃止（SPEED削除）
-var has_shield        : bool  = false
-var pierce_count      : int   = 0
+var has_shield   : bool = false
+var pierce_count : int  = 0   # 1以上なら次の放出が全弾レーザー
 
-var _anim_time  : float = 0.0
-var _walk_frame : int   = 0
-var _walk_timer : float = 0.0
+var _anim_time  : float    = 0.0
+var _walk_frame : int      = 0
+var _walk_timer : float    = 0.0
 var _sprite     : Sprite2D = null
 
-# テクスチャ3状態
-var _tex_idle        : Texture2D = null  # 止まってる
-var _tex_walk        : Texture2D = null  # 歩き（腕下）
-var _tex_raise       : Texture2D = null  # 両手掲げ（止まり）
-var _tex_raise_walk  : Texture2D = null  # 両手掲げ歩き
+var _tex_idle       : Texture2D = null
+var _tex_walk       : Texture2D = null
+var _tex_raise      : Texture2D = null
+var _tex_raise_walk : Texture2D = null
 
 func _ready() -> void:
 	add_to_group("player")
@@ -44,7 +41,7 @@ func _ready() -> void:
 		_tex_raise_walk = load("res://assets/sprites/player_raise_walk.png")
 
 	_sprite = Sprite2D.new()
-	_sprite.name = "PlayerSprite"
+	_sprite.name  = "PlayerSprite"
 	_sprite.scale = Vector2(0.45, 0.45)
 	if _tex_idle:
 		_sprite.texture = _tex_idle
@@ -86,9 +83,6 @@ func _physics_process(delta: float) -> void:
 		if invincible_timer <= 0.0:
 			is_invincible = false
 
-	if speed_boost_timer > 0.0:
-		speed_boost_timer = maxf(speed_boost_timer - delta, 0.0)
-
 	var is_moving : bool = false
 	if is_holding:
 		attract_time += delta
@@ -121,39 +115,31 @@ func _update_sprite(delta: float, is_moving: bool) -> void:
 	if _sprite == null:
 		return
 
-	# 無敵中の点滅（テクスチャ切り替えではなくvisibility）
 	if is_invincible:
 		_sprite.visible = fmod(invincible_timer, 0.2) >= 0.1
 	else:
 		_sprite.visible = true
 
-	# 歩きタイマー
 	_walk_timer += delta
 	if _walk_timer >= WALK_INTERVAL:
 		_walk_timer = 0.0
 		_walk_frame = (_walk_frame + 1) % 2
 
-	# 3状態でテクスチャ選択
 	if is_holding:
-		# 吸い寄せ中
 		if is_moving:
-			# ③ 両手掲げ歩き
 			var tex : Texture2D = _tex_raise_walk if (_walk_frame == 1 and _tex_raise_walk != null) else (_tex_raise if _tex_raise != null else _tex_idle)
-			_sprite.texture = tex
+			_sprite.texture  = tex
 			_sprite.position = Vector2(0.0, sin(_anim_time * 8.0) * 2.5)
 		else:
-			# ② 両手掲げ（止まり）
 			if _tex_raise:
 				_sprite.texture = _tex_raise
 			_sprite.position = Vector2(0.0, sin(_anim_time * 2.0) * 1.5)
 	else:
 		if is_moving:
-			# 歩き（腕下）
 			var tex : Texture2D = _tex_walk if (_walk_frame == 1 and _tex_walk != null) else (_tex_idle if _tex_idle != null else _sprite.texture)
-			_sprite.texture = tex
+			_sprite.texture  = tex
 			_sprite.position = Vector2(0.0, sin(_anim_time * 8.0) * 2.5)
 		else:
-			# ① 止まってる
 			if _tex_idle:
 				_sprite.texture = _tex_idle
 			_sprite.position = Vector2(0.0, sin(_anim_time * 2.0) * 1.5)
@@ -174,10 +160,10 @@ func _attract_bullets() -> void:
 			b.attract_to_player(self)
 
 func _fire_all_bullets() -> void:
-	var targeted : Array = []
-	var bullets  : Array = get_tree().get_nodes_in_group("bullets")
-	var fire_speed_mult  : float = 2.0 if speed_boost_timer > 0.0 else 1.0
-	var pierce_remaining : int   = pierce_count
+	var targeted     : Array = []
+	var bullets      : Array = get_tree().get_nodes_in_group("bullets")
+	# pierce_count >= 1 なら今回の放出は全弾レーザー
+	var all_piercing : bool  = pierce_count > 0
 
 	for i: int in bullets.size():
 		var b : Node = bullets[i]
@@ -187,30 +173,15 @@ func _fire_all_bullets() -> void:
 			continue
 		var tgt : Node2D = _find_target_excluding(b, targeted)
 		if tgt != null:
-			if fire_speed_mult != 1.0:
-				b.set("fire_speed_mult", fire_speed_mult)
-			if pierce_remaining > 0:
+			# 全弾レーザーモード
+			if all_piercing:
 				b.set("is_piercing", true)
-				pierce_remaining -= 1
 			b.fire_at(tgt)
 			targeted.append(tgt)
 
-	var extra : int = bonus_bullets
-	for i: int in bullets.size():
-		if extra <= 0:
-			break
-		var b : Node = bullets[i]
-		if not is_instance_valid(b):
-			continue
-		if b.state != b.State.ORBITING_PLAYER:
-			continue
-		var tgt : Node2D = _find_target_excluding(b, targeted)
-		if tgt != null:
-			b.fire_at(tgt)
-			targeted.append(tgt)
-			extra -= 1
-
-	pierce_count = 0
+	# 使い切ったらリセット
+	if all_piercing:
+		pierce_count = 0
 
 func _find_target_excluding(bullet: Node, excluded: Array) -> Node2D:
 	var best      : Node2D = null
@@ -255,8 +226,12 @@ func _on_death() -> void:
 func _draw() -> void:
 	if has_shield:
 		draw_arc(Vector2.ZERO, 30.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.4, 0.8), 2.0)
-	if speed_boost_timer > 0.0:
-		draw_circle(Vector2.ZERO, 28.0, Color(1.0, 0.7, 0.1, 0.18))
+
+	# PIERCE待機中は赤グロー
+	if pierce_count > 0:
+		draw_circle(Vector2.ZERO, 30.0, Color(1.0, 0.2, 0.2, 0.2))
+		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 32, Color(1.0, 0.3, 0.3, 0.6), 1.5)
+
 	draw_circle(Vector2.ZERO, 26.0, Color(0.2, 0.5, 1.0, 0.15))
 	draw_circle(Vector2.ZERO, 18.0, Color(0.4, 0.7, 1.0, 0.22))
 

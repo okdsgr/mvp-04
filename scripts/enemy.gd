@@ -154,7 +154,6 @@ func _spawn_effect(type: String, vel: Vector2) -> void:
 	var effect : Node2D = Node2D.new()
 	effect.set_script(load("res://scripts/effect.gd"))
 	get_tree().current_scene.add_child(effect)
-	# add_child後にsetupを呼ぶ（ノード初期化済みの状態で）
 	effect.setup(type, global_position, vel)
 
 func _explode() -> void:
@@ -180,14 +179,7 @@ func _try_drop_item() -> void:
 	if randf() > chance:
 		return
 	var item : Area2D = item_scene.instantiate()
-	var roll : float  = randf()
-	if roll < 0.35:
-		item.item_type = 0
-	elif roll < 0.65:
-		item.item_type = 1
-	elif roll < 0.85:
-		item.item_type = 2
-	else:
-		item.item_type = 3
+	# SHIELD=0, PIERCE=1 の2種のみ
+	item.item_type = 0 if randf() < 0.5 else 1
 	item.global_position = global_position
 	get_tree().current_scene.add_child(item)

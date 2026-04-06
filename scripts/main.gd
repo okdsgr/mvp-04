@@ -20,22 +20,19 @@ var enemy_scene:  PackedScene = preload("res://scenes/enemy.tscn")
 var bullet_scene: PackedScene = preload("res://scenes/soul.tscn")
 var player_scene: PackedScene = preload("res://scenes/player.tscn")
 
-var score          : int   = 0
-var _timer         : float = 0.0
-var _color_balance : int   = 0
+var score            : int   = 0
+var _timer           : float = 0.0
+var _color_balance   : int   = 0
 var combo_count      : int   = 0
 var combo_last_white : bool  = true
 var combo_multiplier : float = 1.0
 
-# Wave管理
-var current_wave     : int   = 0   # 0-indexed
-var _wave_timer      : float = 0.0
-var _wave_spawned    : int   = 0   # このWaveでの撃破数
-var _in_wave_break   : bool  = false
-var _wave_break_timer: float = 0.0
-const WAVE_BREAK_DURATION : float = 3.0  # Wave間の休憩
+var current_wave      : int   = 0
+var _wave_timer       : float = 0.0
+var _in_wave_break    : bool  = false
+var _wave_break_timer : float = 0.0
+const WAVE_BREAK_DURATION : float = 3.0
 
-# 現在Waveのパラメータ（キャッシュ）
 var _spawn_interval : float = 2.0
 var _spawn_batch    : int   = 2
 var _color_factor   : float = 0.08
@@ -46,7 +43,11 @@ func _ready() -> void:
 	randomize()
 	add_to_group("main")
 
-	# UI構築
+	# Mac起動時はウィンドウを2倍サイズに
+	if OS.get_name() == "macOS":
+		DisplayServer.window_set_size(Vector2i(1080, 1920))
+		DisplayServer.window_set_position(Vector2i(100, 50))
+
 	var hp_label := Label.new()
 	hp_label.name = "HPLabel"
 	hp_label.position = Vector2(10, 36)
@@ -72,7 +73,7 @@ func _ready() -> void:
 	$UI.add_child(wave_label)
 
 	var wave_msg := Label.new()
-	wave_msg.name = "WaveMsg"
+	wave_msg.name          = "WaveMsg"
 	wave_msg.anchor_left   = 0.5
 	wave_msg.anchor_right  = 0.5
 	wave_msg.anchor_top    = 0.5
@@ -90,9 +91,9 @@ func _ready() -> void:
 	_start_wave(0)
 
 func _start_wave(wave_idx: int) -> void:
-	current_wave  = wave_idx
-	_wave_timer   = 0.0
-	_color_balance = 0  # 各Wave開始時にリセット
+	current_wave   = wave_idx
+	_wave_timer    = 0.0
+	_color_balance = 0
 
 	var def_idx : int = mini(wave_idx, WAVE_DEFINITIONS.size() - 1)
 	var def     : Array = WAVE_DEFINITIONS[def_idx]
@@ -105,7 +106,6 @@ func _start_wave(wave_idx: int) -> void:
 	$UI/WaveLabel.text = "WAVE %d" % (current_wave + 1)
 	_show_wave_message("WAVE %d" % (current_wave + 1))
 
-	# Wave開始時に初期スポーン
 	for i: int in _spawn_batch:
 		_spawn_enemy()
 
@@ -120,7 +120,6 @@ func _process(delta: float) -> void:
 	_wave_timer += delta
 	_timer      += delta
 
-	# Wave終了判定
 	if _wave_timer >= _wave_duration:
 		_begin_wave_break()
 		return
@@ -132,7 +131,6 @@ func _process(delta: float) -> void:
 		for i: int in to_spawn:
 			_spawn_enemy()
 
-	# Waveタイマー表示（残り時間）
 	var remaining : float = maxf(_wave_duration - _wave_timer, 0.0)
 	$UI/WaveLabel.text = "WAVE %d  %d" % [current_wave + 1, int(remaining) + 1]
 
@@ -140,7 +138,6 @@ func _begin_wave_break() -> void:
 	_in_wave_break    = true
 	_wave_break_timer = 0.0
 	_timer            = 0.0
-	# 残り敵を全消し
 	for e : Node in $Enemies.get_children():
 		e.queue_free()
 	for s : Node in $Souls.get_children():
@@ -151,7 +148,6 @@ func _show_wave_message(msg: String) -> void:
 	var lbl : Label = $UI/WaveMsg
 	lbl.text    = msg
 	lbl.visible = true
-	# 2秒後に非表示
 	get_tree().create_timer(2.0).timeout.connect(func(): lbl.visible = false)
 
 func _pick_is_white() -> bool:
@@ -181,7 +177,7 @@ func _spawn_enemy() -> void:
 	)
 	$Enemies.add_child(e)
 
-	var bullet_count : int = 2 if e.enemy_type == 1 else 1  # FAST=2発
+	var bullet_count : int = 2 if e.enemy_type == 1 else 1
 	for bi: int in bullet_count:
 		var b : Area2D = bullet_scene.instantiate()
 		b.is_white     = e.is_white
