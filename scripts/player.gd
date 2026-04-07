@@ -15,7 +15,7 @@ var invincible_timer: float   = 0.0
 var is_invincible   : bool    = false
 
 var has_shield   : bool = false
-var pierce_count : int  = 0   # 1以上なら次の放出が全弾レーザー
+var pierce_count : int  = 0
 
 var _anim_time  : float    = 0.0
 var _walk_frame : int      = 0
@@ -31,14 +31,23 @@ func _ready() -> void:
 	add_to_group("player")
 	target_pos = global_position
 
-	if ResourceLoader.exists("res://assets/sprites/player_idle.png"):
-		_tex_idle = load("res://assets/sprites/player_idle.png")
-	if ResourceLoader.exists("res://assets/sprites/player_walk.png"):
-		_tex_walk = load("res://assets/sprites/player_walk.png")
-	if ResourceLoader.exists("res://assets/sprites/player_raise.png"):
-		_tex_raise = load("res://assets/sprites/player_raise.png")
-	if ResourceLoader.exists("res://assets/sprites/player_raise_walk.png"):
-		_tex_raise_walk = load("res://assets/sprites/player_raise_walk.png")
+	# SkinManager からテクスチャを取得
+	var sm = get_node_or_null("/root/SkinManager")
+	if sm:
+		_tex_idle       = sm.get_texture("player_idle")
+		_tex_walk       = sm.get_texture("player_walk")
+		_tex_raise      = sm.get_texture("player_raise")
+		_tex_raise_walk = sm.get_texture("player_raise_walk")
+	else:
+		# フォールバック（SkinManager未登録時）
+		if ResourceLoader.exists("res://assets/sprites/player_idle.png"):
+			_tex_idle = load("res://assets/sprites/player_idle.png")
+		if ResourceLoader.exists("res://assets/sprites/player_walk.png"):
+			_tex_walk = load("res://assets/sprites/player_walk.png")
+		if ResourceLoader.exists("res://assets/sprites/player_raise.png"):
+			_tex_raise = load("res://assets/sprites/player_raise.png")
+		if ResourceLoader.exists("res://assets/sprites/player_raise_walk.png"):
+			_tex_raise_walk = load("res://assets/sprites/player_raise_walk.png")
 
 	_sprite = Sprite2D.new()
 	_sprite.name  = "PlayerSprite"
@@ -162,7 +171,6 @@ func _attract_bullets() -> void:
 func _fire_all_bullets() -> void:
 	var targeted     : Array = []
 	var bullets      : Array = get_tree().get_nodes_in_group("bullets")
-	# pierce_count >= 1 なら今回の放出は全弾レーザー
 	var all_piercing : bool  = pierce_count > 0
 
 	for i: int in bullets.size():
@@ -173,13 +181,11 @@ func _fire_all_bullets() -> void:
 			continue
 		var tgt : Node2D = _find_target_excluding(b, targeted)
 		if tgt != null:
-			# 全弾レーザーモード
 			if all_piercing:
 				b.set("is_piercing", true)
 			b.fire_at(tgt)
 			targeted.append(tgt)
 
-	# 使い切ったらリセット
 	if all_piercing:
 		pierce_count = 0
 
@@ -226,15 +232,11 @@ func _on_death() -> void:
 func _draw() -> void:
 	if has_shield:
 		draw_arc(Vector2.ZERO, 30.0, 0.0, TAU, 32, Color(0.2, 0.9, 0.4, 0.8), 2.0)
-
-	# PIERCE待機中は赤グロー
 	if pierce_count > 0:
 		draw_circle(Vector2.ZERO, 30.0, Color(1.0, 0.2, 0.2, 0.2))
 		draw_arc(Vector2.ZERO, 28.0, 0.0, TAU, 32, Color(1.0, 0.3, 0.3, 0.6), 1.5)
-
 	draw_circle(Vector2.ZERO, 26.0, Color(0.2, 0.5, 1.0, 0.15))
 	draw_circle(Vector2.ZERO, 18.0, Color(0.4, 0.7, 1.0, 0.22))
-
 	if not is_holding:
 		return
 	for i: int in 3:
