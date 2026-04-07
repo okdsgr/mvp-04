@@ -86,11 +86,7 @@ func _ready() -> void:
 	wave_msg.add_theme_font_size_override("font_size", 28)
 	$UI.add_child(wave_msg)
 
-	var rect : Rect2 = get_viewport_rect()
-	var p : CharacterBody2D = player_scene.instantiate()
-	p.position = Vector2(rect.size.x * 0.5, rect.size.y * 0.82)
-	add_child(p)
-
+	# プレイヤーはスキン選択後に生成するため、ここでは生成しない
 	_show_skin_select()
 
 func _show_skin_select() -> void:
@@ -114,7 +110,7 @@ func _show_skin_select() -> void:
 	sep.custom_minimum_size = Vector2(0, 16)
 	vbox.add_child(sep)
 
-	var skins : Array = ["default", "cat_car", "dog_cow"]
+	var skins  : Array = ["default", "cat_car", "dog_cow"]
 	var labels : Array = ["おばけ & 少年", "車 & 猫", "牛 & 犬"]
 	for i: int in skins.size():
 		var skin_name : String = skins[i]
@@ -125,10 +121,18 @@ func _show_skin_select() -> void:
 		btn.pressed.connect(_on_skin_selected.bind(skin_name, overlay))
 
 func _on_skin_selected(skin_name: String, overlay: Node) -> void:
+	# スキンをセット
 	var sm : Node = get_node_or_null("/root/SkinManager")
 	if sm:
 		sm.set_skin(skin_name)
 	overlay.queue_free()
+
+	# スキン確定後にプレイヤーを生成 → _ready() でSkinManagerから正しいテクスチャを取得できる
+	var rect : Rect2 = get_viewport_rect()
+	var p : CharacterBody2D = player_scene.instantiate()
+	p.position = Vector2(rect.size.x * 0.5, rect.size.y * 0.82)
+	add_child(p)
+
 	_start_wave(0)
 
 func _start_wave(wave_idx: int) -> void:

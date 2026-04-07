@@ -51,12 +51,25 @@ func _ready() -> void:
 
 	direction = Vector2(randf_range(-0.4, 0.4), 1.0).normalized()
 
-	if is_white:
-		_tex_a = load("res://assets/sprites/ghost_detailed.png")
-		_tex_b = load("res://assets/sprites/ghost_white_anim.png") if ResourceLoader.exists("res://assets/sprites/ghost_white_anim.png") else _tex_a
+	# SkinManager からテクスチャを取得
+	var sm : Node = get_node_or_null("/root/SkinManager")
+	if sm:
+		if is_white:
+			_tex_a = sm.get_texture("enemy_white")
+			_tex_b = sm.get_texture("enemy_white_anim")
+		else:
+			_tex_a = sm.get_texture("enemy_black")
+			_tex_b = sm.get_texture("enemy_black_anim")
 	else:
-		_tex_a = load("res://assets/sprites/ghost_black_retro_v3.png")
-		_tex_b = load("res://assets/sprites/ghost_black_anim.png") if ResourceLoader.exists("res://assets/sprites/ghost_black_anim.png") else _tex_a
+		# フォールバック
+		if is_white:
+			_tex_a = load("res://assets/sprites/ghost_detailed.png")
+			_tex_b = load("res://assets/sprites/ghost_white_anim.png") if ResourceLoader.exists("res://assets/sprites/ghost_white_anim.png") else _tex_a
+		else:
+			_tex_a = load("res://assets/sprites/ghost_black_retro_v3.png")
+			_tex_b = load("res://assets/sprites/ghost_black_anim.png") if ResourceLoader.exists("res://assets/sprites/ghost_black_anim.png") else _tex_a
+	if _tex_b == null:
+		_tex_b = _tex_a
 
 	$Sprite2D.texture = _tex_a
 	$Sprite2D.scale   = _base_scale
@@ -179,7 +192,6 @@ func _try_drop_item() -> void:
 	if randf() > chance:
 		return
 	var item : Area2D = item_scene.instantiate()
-	# SHIELD=0, PIERCE=1 の2種のみ
 	item.item_type = 0 if randf() < 0.5 else 1
 	item.global_position = global_position
 	get_tree().current_scene.add_child(item)
