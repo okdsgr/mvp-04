@@ -1,6 +1,5 @@
 extends Node
 
-# スキン定義：スキン名 → 各スプライトのパス
 const SKINS : Dictionary = {
 	"default": {
 		"player_idle":      "res://assets/sprites/player_idle.png",
@@ -15,12 +14,22 @@ const SKINS : Dictionary = {
 	"cat_car": {
 		"player_idle":      "res://assets/sprites/player_cat_idle.png",
 		"player_walk":      "res://assets/sprites/player_cat_walk.png",
-		"player_raise":     "res://assets/sprites/player_cat_idle.png",   # 未生成はidleで代用
+		"player_raise":     "res://assets/sprites/player_cat_idle.png",
 		"player_raise_walk":"res://assets/sprites/player_cat_walk.png",
 		"enemy_white":      "res://assets/sprites/enemy_white_car.png",
 		"enemy_white_anim": "res://assets/sprites/enemy_white_car.png",
 		"enemy_black":      "res://assets/sprites/enemy_black_car.png",
 		"enemy_black_anim": "res://assets/sprites/enemy_black_car.png",
+	},
+	"dog_cow": {
+		"player_idle":      "res://assets/sprites/player_dog_idle.png",
+		"player_walk":      "res://assets/sprites/player_dog_walk.png",
+		"player_raise":     "res://assets/sprites/player_dog_idle.png",
+		"player_raise_walk":"res://assets/sprites/player_dog_walk.png",
+		"enemy_white":      "res://assets/sprites/enemy_white_cow.png",
+		"enemy_white_anim": "res://assets/sprites/enemy_white_cow.png",
+		"enemy_black":      "res://assets/sprites/enemy_black_cow.png",
+		"enemy_black_anim": "res://assets/sprites/enemy_black_cow.png",
 	},
 }
 
@@ -29,7 +38,7 @@ var active_skin : String = "default"
 func set_skin(skin_name: String) -> void:
 	if skin_name in SKINS:
 		active_skin = skin_name
-		print("[SkinManager] skin set: ", skin_name)
+		print("[SkinManager] skin: ", skin_name)
 	else:
 		push_warning("[SkinManager] unknown skin: " + skin_name)
 
@@ -37,7 +46,6 @@ func get_texture(key: String) -> Texture2D:
 	var skin : Dictionary = SKINS.get(active_skin, SKINS["default"])
 	var path : String = skin.get(key, "")
 	if path == "" or not ResourceLoader.exists(path):
-		# fallback to default
 		path = SKINS["default"].get(key, "")
 	if path != "" and ResourceLoader.exists(path):
 		return load(path)

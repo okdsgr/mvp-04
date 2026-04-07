@@ -40,42 +40,7 @@ var _color_factor   : float = 0.08
 var _type_weights   : Array = [0.85, 0.12, 0.03, 0.00]
 var _wave_duration  : float = 20.0
 
-func _show_skin_select() -> void:
-		# スキン選択UI
-		var overlay := ColorRect.new()
-		overlay.name = "SkinOverlay"
-		overlay.color = Color(0.05, 0.05, 0.1, 0.95)
-		overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-		add_child(overlay)
-	
-		var vbox := VBoxContainer.new()
-		vbox.set_anchors_preset(Control.PRESET_CENTER)
-		vbox.position = Vector2(-120, -100)
-		overlay.add_child(vbox)
-	
-		var title := Label.new()
-		title.text = "キャラクターを選んでね"
-		title.add_theme_font_size_override("font_size", 18)
-		vbox.add_child(title)
-	
-		var sep := Control.new()
-		sep.custom_minimum_size = Vector2(0, 16)
-		vbox.add_child(sep)
-	
-		for skin_name in ["default", "cat_car"]:
-			var btn := Button.new()
-			btn.text = "おばけ & 少年" if skin_name == "default" else "車 & 猫"
-			btn.custom_minimum_size = Vector2(240, 48)
-			vbox.add_child(btn)
-			btn.pressed.connect(func():
-				var sm = get_node_or_null("/root/SkinManager")
-				if sm:
-					sm.set_skin(skin_name)
-				overlay.queue_free()
-				_start_wave(0)
-			)
-	
-	func _apply_window_size() -> void:
+func _apply_window_size() -> void:
 	DisplayServer.window_set_size(Vector2i(WIN_W, WIN_H))
 	var scr : Vector2i = DisplayServer.screen_get_size()
 	DisplayServer.window_set_position(Vector2i((scr.x - WIN_W) / 2, (scr.y - WIN_H) / 2))
@@ -127,6 +92,44 @@ func _ready() -> void:
 	add_child(p)
 
 	_show_skin_select()
+
+func _show_skin_select() -> void:
+	var overlay := ColorRect.new()
+	overlay.name  = "SkinOverlay"
+	overlay.color = Color(0.05, 0.05, 0.1, 0.95)
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	$UI.add_child(overlay)
+
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_preset(Control.PRESET_CENTER)
+	vbox.position = Vector2(-120.0, -80.0)
+	overlay.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "キャラクターを選んでね"
+	title.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(title)
+
+	var sep := Control.new()
+	sep.custom_minimum_size = Vector2(0, 16)
+	vbox.add_child(sep)
+
+	var skins : Array = ["default", "cat_car", "dog_cow"]
+	var labels : Array = ["おばけ & 少年", "車 & 猫", "牛 & 犬"]
+	for i: int in skins.size():
+		var skin_name : String = skins[i]
+		var btn := Button.new()
+		btn.text = labels[i]
+		btn.custom_minimum_size = Vector2(240, 48)
+		vbox.add_child(btn)
+		btn.pressed.connect(_on_skin_selected.bind(skin_name, overlay))
+
+func _on_skin_selected(skin_name: String, overlay: Node) -> void:
+	var sm : Node = get_node_or_null("/root/SkinManager")
+	if sm:
+		sm.set_skin(skin_name)
+	overlay.queue_free()
+	_start_wave(0)
 
 func _start_wave(wave_idx: int) -> void:
 	current_wave   = wave_idx
