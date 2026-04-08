@@ -41,15 +41,13 @@ var _gen_queue   : Array = []
 var _gen_current : int   = 0
 
 const PLAYER_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているキャラクターを当てるゲームをします。テーマは「生まれ変わるとしたら？」です。ユーザーはすでにキャラクターを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。キャラクターが決まったら：[PLAYER:英語名]日本語の決定メッセージ。英語名はシンプルな英単語（robot、ninja、bearなど）。最初の質問から始めてください。"
+const ENEMY_SYSTEM  : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているものを当てるゲームをします。テーマは「嫌いなもの、または怖いもの」です。ユーザーはすでにそれを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。決まったら：[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！（英語名はシンプルな英単語）。最初の質問から始めてください。"
+const BG_SYSTEM     : String = "あなたはゲームアーティストのアシスタントです。ユーザーの自由回答から縦スクロールシューティングゲームの背景世界観を決定します。必要なら1〜2回追加質問し、背景プロンプトを生成してください。決定フォーマット（必須）：[BG:英語プロンプト]日本語の世界観説明。英語プロンプトはflux-schnell用。縦スクロールゲーム背景として映える情景を描写する短い英文。最初の質問から始めてください。"
 
-const ENEMY_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているものを当てるゲームをします。テーマは「嫌いなもの、または怖いもの」です。ユーザーはすでにそれを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。決まったら：[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！（英語名はシンプルな英単語）。最初の質問から始めてください。"
-
-const BG_SYSTEM : String = "あなたはゲームアーティストのアシスタントです。ユーザーの自由回答から縦スクロールシューティングゲームの背景世界観を決定します。必要なら1〜2回追加質問し、背景プロンプトを生成してください。決定フォーマット（必須）：[BG:英語プロンプト]日本語の世界観説明。英語プロンプトはflux-schnell用。縦スクロールゲーム背景として映える情景を描写する短い英文。最初の質問から始めてください。"
-
+# =====================================================================
 func _ready() -> void:
 	RenderingServer.set_default_clear_color(Color(0.04, 0.04, 0.10, 1.0))
 	randomize()
-
 	for i: int in 24:
 		_orbs.append({
 			"pos":      Vector2(randf() * VP_W, randf() * VP_H),
@@ -58,18 +56,14 @@ func _ready() -> void:
 			"is_white": randf() > 0.5,
 			"phase":    randf() * TAU,
 		})
-
 	_ui = CanvasLayer.new()
 	add_child(_ui)
-
 	_http_ai = HTTPRequest.new()
 	_http_ai.timeout = 40.0
 	add_child(_http_ai)
-
 	_http_gen = HTTPRequest.new()
 	_http_gen.timeout = 120.0
 	add_child(_http_gen)
-
 	_show_title()
 
 func _process(delta: float) -> void:
@@ -189,56 +183,51 @@ func _on_start_default() -> void:
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 # =====================================================================
-	# SPLASH（フェーズ導入画面）
-	# =====================================================================
-	func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> void:
-		_clear_ui()
-	
-		# 全画面を覆うオーバーレイ
-		var overlay := ColorRect.new()
-		overlay.color = Color(0.02, 0.02, 0.08, 1.0)
-		overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-		_ui.add_child(overlay)
-	
-		# メインテキスト（画面を覆うほど大きく）
-		var main_lbl := Label.new()
-		main_lbl.text = main_text
-		main_lbl.add_theme_font_size_override("font_size", 72)
-		main_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
-		main_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-		main_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		main_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		main_lbl.set_anchors_preset(Control.PRESET_CENTER)
-		main_lbl.position = Vector2(-200.0, -120.0)
-		main_lbl.custom_minimum_size = Vector2(400.0, 0.0)
-		main_lbl.modulate.a = 0.0
-		overlay.add_child(main_lbl)
-	
-		# サブテキスト
-		var sub_lbl := Label.new()
-		sub_lbl.text = sub_text
-		sub_lbl.add_theme_font_size_override("font_size", 18)
-		sub_lbl.add_theme_color_override("font_color", Color(0.6, 0.7, 1.0, 0.85))
-		sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		sub_lbl.set_anchors_preset(Control.PRESET_CENTER)
-		sub_lbl.position = Vector2(-200.0, 60.0)
-		sub_lbl.custom_minimum_size = Vector2(400.0, 0.0)
-		sub_lbl.modulate.a = 0.0
-		overlay.add_child(sub_lbl)
-	
-		# フェードイン → 待機 → フェードアウト → コールバック
-		var tw := create_tween()
-		tw.set_parallel(false)
-		tw.tween_property(main_lbl, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
-		tw.tween_property(sub_lbl,  "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_SINE)
-		tw.tween_interval(1.5)
-		tw.tween_property(overlay, "modulate:a", 0.0, 0.5).set_trans(Tween.TRANS_SINE)
-		var _cb_done := func():
-			overlay.queue_free()
-			on_done.call()
-		tw.tween_callback(_cb_done)
-	
-	# =====================================================================
+# SPLASH
+# =====================================================================
+func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> void:
+	_clear_ui()
+
+	var overlay := ColorRect.new()
+	overlay.color = Color(0.02, 0.02, 0.08, 1.0)
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_ui.add_child(overlay)
+
+	var main_lbl := Label.new()
+	main_lbl.text = main_text
+	main_lbl.add_theme_font_size_override("font_size", 72)
+	main_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
+	main_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	main_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	main_lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	main_lbl.set_anchors_preset(Control.PRESET_CENTER)
+	main_lbl.position = Vector2(-200.0, -120.0)
+	main_lbl.custom_minimum_size = Vector2(400.0, 0.0)
+	main_lbl.modulate.a = 0.0
+	overlay.add_child(main_lbl)
+
+	var sub_lbl := Label.new()
+	sub_lbl.text = sub_text
+	sub_lbl.add_theme_font_size_override("font_size", 18)
+	sub_lbl.add_theme_color_override("font_color", Color(0.6, 0.7, 1.0, 0.85))
+	sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub_lbl.set_anchors_preset(Control.PRESET_CENTER)
+	sub_lbl.position = Vector2(-200.0, 60.0)
+	sub_lbl.custom_minimum_size = Vector2(400.0, 0.0)
+	sub_lbl.modulate.a = 0.0
+	overlay.add_child(sub_lbl)
+
+	var tw := create_tween()
+	tw.set_parallel(false)
+	tw.tween_property(main_lbl, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(sub_lbl,  "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_SINE)
+	tw.tween_interval(1.5)
+	tw.tween_property(overlay,  "modulate:a", 0.0, 0.5).set_trans(Tween.TRANS_SINE)
+	# ラムダを変数に代入してから接続
+	var cb := func(): overlay.queue_free(); on_done.call()
+	tw.finished.connect(cb)
+
+# =====================================================================
 # AKINATOR 共通UI
 # =====================================================================
 func _show_aki_ui(phase_title: String, theme: String) -> void:
@@ -306,7 +295,7 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 		_choices_vbox.add_child(btn)
 		btn.pressed.connect(_on_choice_pressed.bind(choice))
 
-# 背景専用UI
+# 背景専用UI（テキスト入力）
 func _show_bg_ui() -> void:
 	_clear_ui()
 	var cx : float = VP_W * 0.5
@@ -327,15 +316,24 @@ func _show_bg_ui() -> void:
 	theme_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
 	_ui.add_child(theme_lbl)
 
+	var hint_lbl := Label.new()
+	hint_lbl.text = "以下に自由に記載してください（100文字以内）\n例：宇宙の星雲、深海の海底、桜が舞う日本の城"
+	hint_lbl.add_theme_font_size_override("font_size", 14)
+	hint_lbl.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0, 0.75))
+	hint_lbl.position = Vector2(28.0, 108.0)
+	hint_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	hint_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
+	_ui.add_child(hint_lbl)
+
 	var line := ColorRect.new()
-	line.position = Vector2(28.0, 120.0)
+	line.position = Vector2(28.0, 162.0)
 	line.size = Vector2(VP_W - 56.0, 1.5)
 	line.color = Color(0.4, 0.4, 0.7, 0.4)
 	_ui.add_child(line)
 
 	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(28.0, 130.0)
-	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 300.0)
+	scroll.position = Vector2(28.0, 172.0)
+	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 240.0)
 	_ui.add_child(scroll)
 
 	_history_vbox = VBoxContainer.new()
@@ -344,7 +342,7 @@ func _show_bg_ui() -> void:
 	scroll.add_child(_history_vbox)
 
 	var line2 := ColorRect.new()
-	line2.position = Vector2(28.0, 438.0)
+	line2.position = Vector2(28.0, 420.0)
 	line2.size = Vector2(VP_W - 56.0, 1.5)
 	line2.color = Color(0.4, 0.4, 0.7, 0.4)
 	_ui.add_child(line2)
@@ -353,16 +351,17 @@ func _show_bg_ui() -> void:
 	_question_lbl.text = "考え中..."
 	_question_lbl.add_theme_font_size_override("font_size", 18)
 	_question_lbl.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0))
-	_question_lbl.position = Vector2(28.0, 450.0)
+	_question_lbl.position = Vector2(28.0, 432.0)
 	_question_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_question_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 80.0)
+	_question_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 60.0)
 	_ui.add_child(_question_lbl)
 
 	_input_edit = LineEdit.new()
 	_input_edit.placeholder_text = "例：桜が舞う江戸の城下町、深い宇宙の星雲..."
+	_input_edit.max_length = 100
 	_input_edit.custom_minimum_size = Vector2(390.0, 52.0)
 	_input_edit.add_theme_font_size_override("font_size", 16)
-	_input_edit.position = Vector2(28.0, 600.0)
+	_input_edit.position = Vector2(28.0, 560.0)
 	_input_edit.editable = false
 	_ui.add_child(_input_edit)
 
@@ -371,12 +370,14 @@ func _show_bg_ui() -> void:
 	send_btn.text = "送信"
 	send_btn.custom_minimum_size = Vector2(90.0, 52.0)
 	send_btn.add_theme_font_size_override("font_size", 16)
-	send_btn.position = Vector2(430.0, 600.0)
+	send_btn.position = Vector2(430.0, 560.0)
 	send_btn.disabled = true
 	_ui.add_child(send_btn)
 
 	send_btn.pressed.connect(_on_bg_send_pressed)
-	_input_edit.text_submitted.connect(func(_t: String): _on_bg_send_pressed())
+	# ラムダを変数に代入
+	var submit_cb := func(_t: String): _on_bg_send_pressed()
+	_input_edit.text_submitted.connect(submit_cb)
 
 func _on_bg_send_pressed() -> void:
 	if _waiting or _input_edit == null:
@@ -398,6 +399,9 @@ func _start_player_akinator() -> void:
 	_messages = []
 	_cur_question = ""
 	_system_prompt = PLAYER_SYSTEM
+	_show_splash("自分の分身を\nつくります", "頭の中でイメージしてください…", _after_player_splash)
+
+func _after_player_splash() -> void:
 	_show_aki_ui("自機を決めよう ①/③", "生まれ変わるとしたら、\nどんな存在になりたいですか？")
 	_call_claude_start()
 
@@ -406,6 +410,9 @@ func _start_enemy_akinator() -> void:
 	_messages = []
 	_cur_question = ""
 	_system_prompt = ENEMY_SYSTEM
+	_show_splash("敵の分身を\nつくります", "あなたの嫌いなものを教えてください…", _after_enemy_splash)
+
+func _after_enemy_splash() -> void:
 	_show_aki_ui("敵を決めよう ②/③", "嫌いなもの、または怖いものを\n頭の中で思い浮かべてください")
 	_call_claude_start()
 
@@ -473,16 +480,14 @@ func _show_decision(text: String) -> void:
 		_question_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
 
 # =====================================================================
-# n8n PROXY 経由 CLAUDE 呼び出し
+# CLAUDE 呼び出し（n8nプロキシ経由）
 # =====================================================================
 func _do_claude_request() -> void:
-	# n8nプロキシに {system, messages} を送信（APIキー不要）
 	var body : String = JSON.stringify({
 		"system":   _system_prompt,
 		"messages": _messages,
 	})
 	var headers : PackedStringArray = ["Content-Type: application/json"]
-
 	if _http_ai.request_completed.is_connected(_on_claude_response):
 		_http_ai.request_completed.disconnect(_on_claude_response)
 	_http_ai.request_completed.connect(_on_claude_response, CONNECT_ONE_SHOT)
@@ -498,8 +503,6 @@ func _on_claude_response(_r: int, code: int, _h: PackedStringArray, body: Packed
 	if json == null:
 		_update_question("エラー: JSON解析失敗 (%d)" % code)
 		return
-
-	# n8nプロキシは {"reply": "..."} を返す
 	if json.has("reply"):
 		reply = str(json["reply"])
 	elif json.has("error"):
@@ -513,15 +516,15 @@ func _on_claude_response(_r: int, code: int, _h: PackedStringArray, body: Packed
 	_parse_reply(reply)
 
 func _parse_reply(reply: String) -> void:
-	var re_q := RegEx.new()
+	var re_q  := RegEx.new()
 	re_q.compile("\\[Q\\](.+)")
 	var mq = re_q.search(reply)
 
-	var re_p := RegEx.new()
+	var re_p  := RegEx.new()
 	re_p.compile("\\[PLAYER:([a-zA-Z ]+)\\]")
 	var mp = re_p.search(reply)
 
-	var re_e := RegEx.new()
+	var re_e  := RegEx.new()
 	re_e.compile("\\[ENEMY:([a-zA-Z ]+)\\]")
 	var me = re_e.search(reply)
 
@@ -532,14 +535,14 @@ func _parse_reply(reply: String) -> void:
 	if _screen == Screen.PLAYER_AKI and mp != null:
 		_player_en  = mp.get_string(1).strip_edges()
 		_player_msg = reply.replace(mp.get_string(), "").strip_edges()
-		_show_decision(_player_msg)
-		await get_tree().create_timer(2.5).timeout
+		_show_decision("ありがとう、見えてきました…\n\n" + _player_msg)
+		await get_tree().create_timer(3.0).timeout
 		_start_enemy_akinator()
 	elif _screen == Screen.ENEMY_AKI and me != null:
 		_enemy_en  = me.get_string(1).strip_edges()
 		_enemy_msg = reply.replace(me.get_string(), "").strip_edges()
-		_show_decision(_enemy_msg)
-		await get_tree().create_timer(2.5).timeout
+		_show_decision("なるほど、強敵が現れそうですね…\n\n" + _enemy_msg)
+		await get_tree().create_timer(3.0).timeout
 		_start_bg_akinator()
 	elif _screen == Screen.BG_AKI and mbg != null:
 		_bg_prompt = mbg.get_string(1).strip_edges()
@@ -548,10 +551,8 @@ func _parse_reply(reply: String) -> void:
 		await get_tree().create_timer(2.5).timeout
 		_start_generation()
 	elif mq != null:
-		# [Q]タグ付き質問文だけを表示
 		_update_question(mq.get_string(1).strip_edges())
 	else:
-		# フォールバック：最後の行を質問として表示
 		var lines : Array = reply.strip_edges().split("\n")
 		var last : String = ""
 		for line : String in lines:
@@ -698,6 +699,6 @@ func _show_ready() -> void:
 	start_btn.custom_minimum_size = Vector2(330, 70)
 	start_btn.add_theme_font_size_override("font_size", 20)
 	vbox.add_child(start_btn)
-	start_btn.pressed.connect(func():
-		get_tree().change_scene_to_file("res://scenes/main.tscn")
-	)
+	# ラムダを変数に代入
+	var start_cb := func(): get_tree().change_scene_to_file("res://scenes/main.tscn")
+	start_btn.pressed.connect(start_cb)
