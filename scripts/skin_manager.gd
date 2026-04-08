@@ -41,6 +41,16 @@ const SKINS : Dictionary = {
 		"enemy_black":      "res://assets/sprites/enemy_black_tv.png",
 		"enemy_black_anim": "res://assets/sprites/enemy_black_tv.png",
 	},
+	"cup_cake": {
+		"player_idle":      "res://assets/sprites/player_cup_idle.png",
+		"player_walk":      "res://assets/sprites/player_cup_walk.png",
+		"player_raise":     "res://assets/sprites/player_cup_idle.png",
+		"player_raise_walk":"res://assets/sprites/player_cup_walk.png",
+		"enemy_white":      "res://assets/sprites/enemy_white_cake.png",
+		"enemy_white_anim": "res://assets/sprites/enemy_white_cake.png",
+		"enemy_black":      "res://assets/sprites/enemy_black_cake.png",
+		"enemy_black_anim": "res://assets/sprites/enemy_black_cake.png",
+	},
 }
 
 var active_skin : String = "default"

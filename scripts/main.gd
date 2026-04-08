@@ -110,8 +110,8 @@ func _show_skin_select() -> void:
 	sep.custom_minimum_size = Vector2(0, 16)
 	vbox.add_child(sep)
 
-	var skins  : Array = ["default", "cat_car", "dog_cow", "ufo_tv"]
-	var labels : Array = ["おばけ & 少年", "車 & 猫", "牛 & 犬", "テレビ & UFO"]
+	var skins  : Array = ["default", "cat_car", "dog_cow", "ufo_tv", "cup_cake"]
+	var labels : Array = ["おばけ & 少年", "車 & 猫", "牛 & 犬", "テレビ & UFO", "ケーキ & コップ"]
 	for i: int in skins.size():
 		var skin_name : String = skins[i]
 		var btn := Button.new()
