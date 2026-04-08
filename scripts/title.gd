@@ -40,15 +40,14 @@ var _step_lbl     : Label         = null
 var _gen_queue   : Array = []
 var _gen_current : int   = 0
 
-# キー待ちコールバック
 var _key_callback : Callable = Callable()
 var _waiting_key  : bool = false
 
 const PLAYER_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているキャラクターを当てるゲームをします。テーマは「生まれ変わるとしたら？」です。ユーザーはすでにキャラクターを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。キャラクターが決まったら：[PLAYER:英語名]日本語の決定メッセージ。英語名はシンプルな英単語（robot、ninja、bearなど）。最初の質問から始めてください。"
 const ENEMY_SYSTEM  : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているものを当てるゲームをします。テーマは「嫌いなもの、または怖いもの」です。ユーザーはすでにそれを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。決まったら：[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！（英語名はシンプルな英単語）。最初の質問から始めてください。"
-const BG_SYSTEM     : String = "あなたはゲームアーティストのアシスタントです。ユーザーの自由回答から縦スクロールシューティングゲームの背景世界観を決定します。必要なら1〜2回追加質問し、背景プロンプトを生成してください。決定フォーマット（必須）：[BG:英語プロンプト]日本語の世界観説明。英語プロンプトはflux-schnell用。縦スクロールゲーム背景として映える情景を描写する短い英文。最初の質問から始めてください。"
+# BGは追加質問禁止・1回の入力で即決定
+const BG_SYSTEM : String = "あなたはゲームアーティストです。ユーザーの入力した世界観の説明から、縦スクロールシューティングゲームの背景画像プロンプトを生成してください。追加質問は絶対に行わないでください。ユーザーの入力を受け取ったら必ず即座に以下のフォーマットで回答してください：[BG:英語プロンプト]日本語の世界観コメント。英語プロンプトはflux-schnell用の短い英文で、縦スクロールゲーム背景として映える情景にしてください。"
 
-# =====================================================================
 func _ready() -> void:
 	RenderingServer.set_default_clear_color(Color(0.04, 0.04, 0.10, 1.0))
 	randomize()
@@ -79,7 +78,6 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _input(event: InputEvent) -> void:
-	# キー待ち中なら任意入力で次へ
 	if _waiting_key:
 		var hit := false
 		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
@@ -94,7 +92,6 @@ func _input(event: InputEvent) -> void:
 			_key_callback = Callable()
 			cb.call()
 		return
-
 	if _screen != Screen.TITLE:
 		return
 	var hit2 := false
@@ -127,11 +124,7 @@ func _clear_ui() -> void:
 	_choices_vbox = null
 	_input_edit   = null
 
-# =====================================================================
-# キー待ち
-# =====================================================================
 func _wait_for_key(on_next: Callable) -> void:
-	# 「Tap to continue」ラベルを追加
 	var lbl := Label.new()
 	lbl.name = "TapToContinue"
 	lbl.text = "Tap or Press Any Key"
@@ -142,12 +135,10 @@ func _wait_for_key(on_next: Callable) -> void:
 	lbl.position = Vector2(-160.0, 180.0)
 	lbl.custom_minimum_size = Vector2(320.0, 0.0)
 	_ui.add_child(lbl)
-
 	var tw := create_tween()
 	tw.set_loops(-1)
 	tw.tween_property(lbl, "modulate:a", 0.2, 0.6).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(lbl, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
-
 	_key_callback = on_next
 	_waiting_key  = true
 
@@ -158,28 +149,24 @@ func _show_title() -> void:
 	_screen = Screen.TITLE
 	_clear_ui()
 	var cx : float = VP_W * 0.5
-
 	var t := Label.new()
 	t.text = GAME_TITLE
 	t.add_theme_font_size_override("font_size", 72)
 	t.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
 	t.position = Vector2(cx - 190.0, 260.0)
 	_ui.add_child(t)
-
 	var sub := Label.new()
 	sub.text = "グロスブレイク"
 	sub.add_theme_font_size_override("font_size", 20)
 	sub.add_theme_color_override("font_color", Color(0.5, 0.5, 0.85, 0.9))
 	sub.position = Vector2(cx - 83.0, 358.0)
 	_ui.add_child(sub)
-
 	var press := Label.new()
 	press.text = "Tap or Press Any Key"
 	press.add_theme_font_size_override("font_size", 18)
 	press.add_theme_color_override("font_color", Color(0.7, 0.7, 1.0))
 	press.position = Vector2(cx - 105.0, 680.0)
 	_ui.add_child(press)
-
 	var tw := create_tween()
 	tw.set_loops(-1)
 	tw.tween_property(press, "modulate:a", 0.1, 0.75).set_trans(Tween.TRANS_SINE)
@@ -192,26 +179,22 @@ func _show_menu() -> void:
 	_screen = Screen.MENU
 	_clear_ui()
 	var cx : float = VP_W * 0.5
-
 	var t := Label.new()
 	t.text = GAME_TITLE
 	t.add_theme_font_size_override("font_size", 48)
 	t.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
 	t.position = Vector2(cx - 128.0, 200.0)
 	_ui.add_child(t)
-
 	var vbox := VBoxContainer.new()
 	vbox.position = Vector2(cx - 155.0, 420.0)
 	vbox.add_theme_constant_override("separation", 22)
 	_ui.add_child(vbox)
-
 	var s_btn := Button.new()
 	s_btn.text = "▶   すぐに始める"
 	s_btn.custom_minimum_size = Vector2(310, 64)
 	s_btn.add_theme_font_size_override("font_size", 18)
 	vbox.add_child(s_btn)
 	s_btn.pressed.connect(_on_start_default)
-
 	var c_btn := Button.new()
 	c_btn.text = "✦   カスタマイズ"
 	c_btn.custom_minimum_size = Vector2(310, 64)
@@ -231,12 +214,10 @@ func _on_start_default() -> void:
 # =====================================================================
 func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> void:
 	_clear_ui()
-
 	var overlay := ColorRect.new()
 	overlay.color = Color(0.02, 0.02, 0.08, 1.0)
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_ui.add_child(overlay)
-
 	var main_lbl := Label.new()
 	main_lbl.text = main_text
 	main_lbl.add_theme_font_size_override("font_size", 72)
@@ -249,7 +230,6 @@ func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> voi
 	main_lbl.custom_minimum_size = Vector2(400.0, 0.0)
 	main_lbl.modulate.a = 0.0
 	overlay.add_child(main_lbl)
-
 	var sub_lbl := Label.new()
 	sub_lbl.text = sub_text
 	sub_lbl.add_theme_font_size_override("font_size", 18)
@@ -260,7 +240,6 @@ func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> voi
 	sub_lbl.custom_minimum_size = Vector2(400.0, 0.0)
 	sub_lbl.modulate.a = 0.0
 	overlay.add_child(sub_lbl)
-
 	var tw := create_tween()
 	tw.set_parallel(false)
 	tw.tween_property(main_lbl, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
@@ -271,19 +250,17 @@ func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> voi
 	tw.finished.connect(cb)
 
 # =====================================================================
-# AKINATOR 共通UI
+# AKINATOR 共通UI（Yes/No式）
 # =====================================================================
 func _show_aki_ui(phase_title: String, theme: String) -> void:
 	_clear_ui()
 	var cx : float = VP_W * 0.5
-
 	var phase_lbl := Label.new()
 	phase_lbl.text = phase_title
 	phase_lbl.add_theme_font_size_override("font_size", 16)
 	phase_lbl.add_theme_color_override("font_color", Color(0.55, 0.65, 1.0, 0.85))
 	phase_lbl.position = Vector2(cx - 100.0, 30.0)
 	_ui.add_child(phase_lbl)
-
 	var theme_lbl := Label.new()
 	theme_lbl.text = theme
 	theme_lbl.add_theme_font_size_override("font_size", 19)
@@ -292,29 +269,24 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 	theme_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	theme_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
 	_ui.add_child(theme_lbl)
-
 	var line := ColorRect.new()
 	line.position = Vector2(28.0, 120.0)
 	line.size = Vector2(VP_W - 56.0, 1.5)
 	line.color = Color(0.4, 0.4, 0.7, 0.4)
 	_ui.add_child(line)
-
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(28.0, 130.0)
 	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 340.0)
 	_ui.add_child(scroll)
-
 	_history_vbox = VBoxContainer.new()
 	_history_vbox.add_theme_constant_override("separation", 8)
 	_history_vbox.custom_minimum_size = Vector2(VP_W - 70.0, 0)
 	scroll.add_child(_history_vbox)
-
 	var line2 := ColorRect.new()
 	line2.position = Vector2(28.0, 478.0)
 	line2.size = Vector2(VP_W - 56.0, 1.5)
 	line2.color = Color(0.4, 0.4, 0.7, 0.4)
 	_ui.add_child(line2)
-
 	_question_lbl = Label.new()
 	_question_lbl.text = "考え中..."
 	_question_lbl.add_theme_font_size_override("font_size", 20)
@@ -323,12 +295,10 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 	_question_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_question_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 80.0)
 	_ui.add_child(_question_lbl)
-
 	_choices_vbox = VBoxContainer.new()
 	_choices_vbox.position = Vector2(cx - 145.0, 600.0)
 	_choices_vbox.add_theme_constant_override("separation", 10)
 	_ui.add_child(_choices_vbox)
-
 	for choice : String in CHOICES:
 		var btn := Button.new()
 		btn.text = choice
@@ -338,18 +308,16 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 		_choices_vbox.add_child(btn)
 		btn.pressed.connect(_on_choice_pressed.bind(choice))
 
-# 背景専用UI
+# 背景専用UI（テキスト自由入力・初回から入力可能）
 func _show_bg_ui() -> void:
 	_clear_ui()
 	var cx : float = VP_W * 0.5
-
 	var phase_lbl := Label.new()
 	phase_lbl.text = "背景を決めよう ③/③"
 	phase_lbl.add_theme_font_size_override("font_size", 16)
 	phase_lbl.add_theme_color_override("font_color", Color(0.55, 0.65, 1.0, 0.85))
 	phase_lbl.position = Vector2(cx - 100.0, 30.0)
 	_ui.add_child(phase_lbl)
-
 	var theme_lbl := Label.new()
 	theme_lbl.text = "どんな世界を飛び回りたいですか？"
 	theme_lbl.add_theme_font_size_override("font_size", 19)
@@ -358,7 +326,6 @@ func _show_bg_ui() -> void:
 	theme_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	theme_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
 	_ui.add_child(theme_lbl)
-
 	var hint_lbl := Label.new()
 	hint_lbl.text = "以下に自由に記載してください（100文字以内）\n例：宇宙の星雲、深海の海底、桜が舞う日本の城"
 	hint_lbl.add_theme_font_size_override("font_size", 14)
@@ -367,56 +334,36 @@ func _show_bg_ui() -> void:
 	hint_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	hint_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
 	_ui.add_child(hint_lbl)
-
 	var line := ColorRect.new()
 	line.position = Vector2(28.0, 162.0)
 	line.size = Vector2(VP_W - 56.0, 1.5)
 	line.color = Color(0.4, 0.4, 0.7, 0.4)
 	_ui.add_child(line)
-
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(28.0, 172.0)
-	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 240.0)
-	_ui.add_child(scroll)
-
-	_history_vbox = VBoxContainer.new()
-	_history_vbox.add_theme_constant_override("separation", 8)
-	_history_vbox.custom_minimum_size = Vector2(VP_W - 70.0, 0)
-	scroll.add_child(_history_vbox)
-
-	var line2 := ColorRect.new()
-	line2.position = Vector2(28.0, 420.0)
-	line2.size = Vector2(VP_W - 56.0, 1.5)
-	line2.color = Color(0.4, 0.4, 0.7, 0.4)
-	_ui.add_child(line2)
-
 	_question_lbl = Label.new()
-	_question_lbl.text = "考え中..."
+	_question_lbl.text = ""
 	_question_lbl.add_theme_font_size_override("font_size", 18)
 	_question_lbl.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0))
-	_question_lbl.position = Vector2(28.0, 432.0)
+	_question_lbl.position = Vector2(28.0, 180.0)
 	_question_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_question_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 60.0)
 	_ui.add_child(_question_lbl)
-
+	# 入力欄は最初から有効
 	_input_edit = LineEdit.new()
 	_input_edit.placeholder_text = "例：桜が舞う江戸の城下町、深い宇宙の星雲..."
 	_input_edit.max_length = 100
 	_input_edit.custom_minimum_size = Vector2(390.0, 52.0)
 	_input_edit.add_theme_font_size_override("font_size", 16)
 	_input_edit.position = Vector2(28.0, 560.0)
-	_input_edit.editable = false
+	_input_edit.editable = true
 	_ui.add_child(_input_edit)
-
 	var send_btn := Button.new()
 	send_btn.name = "SendBtn"
 	send_btn.text = "送信"
 	send_btn.custom_minimum_size = Vector2(90.0, 52.0)
 	send_btn.add_theme_font_size_override("font_size", 16)
 	send_btn.position = Vector2(430.0, 560.0)
-	send_btn.disabled = true
+	send_btn.disabled = false
 	_ui.add_child(send_btn)
-
 	send_btn.pressed.connect(_on_bg_send_pressed)
 	var submit_cb := func(_t: String): _on_bg_send_pressed()
 	_input_edit.text_submitted.connect(submit_cb)
@@ -429,7 +376,8 @@ func _on_bg_send_pressed() -> void:
 		return
 	_input_edit.text = ""
 	_add_history("", answer)
-	_messages.append({"role": "user", "content": answer})
+	# BGはユーザー入力を直接最初のメッセージとして送信
+	_messages = [{"role": "user", "content": answer}]
 	_set_waiting(true)
 	_do_claude_request()
 
@@ -464,7 +412,7 @@ func _start_bg_akinator() -> void:
 	_cur_question = ""
 	_system_prompt = BG_SYSTEM
 	_show_bg_ui()
-	_call_claude_start()
+	# BGは自動送信しない。ユーザーの入力を待つ。
 
 func _call_claude_start() -> void:
 	_set_waiting(true)
@@ -520,10 +468,8 @@ func _show_decision(text: String) -> void:
 	if is_instance_valid(_question_lbl):
 		_question_lbl.text = text
 		_question_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
-	# ボタンを全部隠す
 	if is_instance_valid(_choices_vbox):
 		_choices_vbox.hide()
-	# 送信ボタンも隠す
 	var sbn := _ui.get_node_or_null("SendBtn")
 	if sbn:
 		sbn.hide()
@@ -531,7 +477,7 @@ func _show_decision(text: String) -> void:
 		_input_edit.hide()
 
 # =====================================================================
-# CLAUDE 呼び出し（n8nプロキシ経由）
+# CLAUDE（n8nプロキシ経由）
 # =====================================================================
 func _do_claude_request() -> void:
 	var body : String = JSON.stringify({
@@ -546,11 +492,9 @@ func _do_claude_request() -> void:
 
 func _on_claude_response(_r: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
 	var text : String = body.get_string_from_utf8()
-	print("[Claude] code=", code, " | ", text.substr(0, 150))
-
+	print("[Claude] code=", code, " | ", text.substr(0, 200))
 	var json = JSON.parse_string(text)
 	var reply : String = ""
-
 	if json == null:
 		_update_question("エラー: JSON解析失敗 (%d)" % code)
 		return
@@ -562,7 +506,6 @@ func _on_claude_response(_r: int, code: int, _h: PackedStringArray, body: Packed
 	else:
 		_update_question("エラー (%d): %s" % [code, text.substr(0, 80)])
 		return
-
 	_messages.append({"role": "assistant", "content": reply})
 	_parse_reply(reply)
 
@@ -570,15 +513,12 @@ func _parse_reply(reply: String) -> void:
 	var re_q  := RegEx.new()
 	re_q.compile("\\[Q\\](.+)")
 	var mq = re_q.search(reply)
-
 	var re_p  := RegEx.new()
 	re_p.compile("\\[PLAYER:([a-zA-Z ]+)\\]")
 	var mp = re_p.search(reply)
-
 	var re_e  := RegEx.new()
 	re_e.compile("\\[ENEMY:([a-zA-Z ]+)\\]")
 	var me = re_e.search(reply)
-
 	var re_bg := RegEx.new()
 	re_bg.compile("\\[BG:([^\\]]+)\\]")
 	var mbg = re_bg.search(reply)
@@ -588,28 +528,31 @@ func _parse_reply(reply: String) -> void:
 		_player_msg = reply.replace(mp.get_string(), "").strip_edges()
 		_show_decision("ありがとう、見えてきました…\n\n" + _player_msg)
 		_wait_for_key(_start_enemy_akinator)
-
 	elif _screen == Screen.ENEMY_AKI and me != null:
 		_enemy_en  = me.get_string(1).strip_edges()
 		_enemy_msg = reply.replace(me.get_string(), "").strip_edges()
 		_show_decision("なるほど、強敵が現れそうですね…\n\n" + _enemy_msg)
 		_wait_for_key(_start_bg_akinator)
-
 	elif _screen == Screen.BG_AKI and mbg != null:
 		_bg_prompt = mbg.get_string(1).strip_edges()
 		var disp : String = reply.replace(mbg.get_string(), "").strip_edges()
+		if disp.is_empty():
+			disp = "背景が決まりました！"
 		_show_decision(disp)
 		_wait_for_key(_start_generation)
-
 	elif mq != null:
 		_update_question(mq.get_string(1).strip_edges())
 	else:
-		var lines : Array = reply.strip_edges().split("\n")
-		var last : String = ""
-		for line : String in lines:
-			if not line.strip_edges().is_empty():
-				last = line.strip_edges()
-		_update_question(last if not last.is_empty() else reply.strip_edges())
+		# BGフェーズでタグなし → まだ入力を受け付ける
+		if _screen == Screen.BG_AKI:
+			_update_question(reply.strip_edges())
+		else:
+			var lines : Array = reply.strip_edges().split("\n")
+			var last : String = ""
+			for line : String in lines:
+				if not line.strip_edges().is_empty():
+					last = line.strip_edges()
+			_update_question(last if not last.is_empty() else reply.strip_edges())
 
 # =====================================================================
 # GENERATING
@@ -618,39 +561,32 @@ func _start_generation() -> void:
 	_screen = Screen.GENERATING
 	_clear_ui()
 	var cx : float = VP_W * 0.5
-
 	var vbox := VBoxContainer.new()
 	vbox.position = Vector2(cx - 165.0, 340.0)
 	vbox.add_theme_constant_override("separation", 18)
 	_ui.add_child(vbox)
-
 	var title := Label.new()
 	title.text = "スプライトを生成中..."
 	title.add_theme_font_size_override("font_size", 20)
 	vbox.add_child(title)
-
 	_progress_lbl = Label.new()
 	_progress_lbl.text = "0 / 5"
 	_progress_lbl.add_theme_font_size_override("font_size", 15)
 	vbox.add_child(_progress_lbl)
-
 	_progress_bar = ProgressBar.new()
 	_progress_bar.min_value = 0.0
 	_progress_bar.max_value = 5.0
 	_progress_bar.value     = 0.0
 	_progress_bar.custom_minimum_size = Vector2(330, 28)
 	vbox.add_child(_progress_bar)
-
 	_step_lbl = Label.new()
 	_step_lbl.text = "準備中..."
 	_step_lbl.add_theme_font_size_override("font_size", 14)
 	_step_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
 	vbox.add_child(_step_lbl)
-
 	if _http_gen.request_completed.is_connected(_on_gen_done):
 		_http_gen.request_completed.disconnect(_on_gen_done)
 	_http_gen.request_completed.connect(_on_gen_done)
-
 	_gen_queue   = _build_gen_queue()
 	_gen_current = 0
 	_send_gen_next()
@@ -722,29 +658,24 @@ func _show_ready() -> void:
 	_screen = Screen.READY
 	_clear_ui()
 	var cx : float = VP_W * 0.5
-
 	var vbox := VBoxContainer.new()
 	vbox.position = Vector2(cx - 165.0, 360.0)
 	vbox.add_theme_constant_override("separation", 20)
 	_ui.add_child(vbox)
-
 	var r_lbl := Label.new()
 	r_lbl.text = "準備完了！ 🎮"
 	r_lbl.add_theme_font_size_override("font_size", 36)
 	r_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
 	vbox.add_child(r_lbl)
-
 	if not _player_en.is_empty() or not _enemy_en.is_empty():
 		var i_lbl := Label.new()
 		i_lbl.text = "自機: %s  /  敵: %s" % [_player_en, _enemy_en]
 		i_lbl.add_theme_font_size_override("font_size", 15)
 		i_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0, 0.9))
 		vbox.add_child(i_lbl)
-
 	var sep := Control.new()
 	sep.custom_minimum_size = Vector2(0, 16)
 	vbox.add_child(sep)
-
 	var start_btn := Button.new()
 	start_btn.text = "▶  ゲームスタート！"
 	start_btn.custom_minimum_size = Vector2(330, 70)
