@@ -11,3 +11,5 @@ enemy.gd
 main.gd
 player.gd
 soul.gd
+
+config/api_key.txt
