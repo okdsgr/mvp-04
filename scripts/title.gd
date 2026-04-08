@@ -189,6 +189,56 @@ func _on_start_default() -> void:
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 # =====================================================================
+	# SPLASH（フェーズ導入画面）
+	# =====================================================================
+	func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> void:
+		_clear_ui()
+	
+		# 全画面を覆うオーバーレイ
+		var overlay := ColorRect.new()
+		overlay.color = Color(0.02, 0.02, 0.08, 1.0)
+		overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_ui.add_child(overlay)
+	
+		# メインテキスト（画面を覆うほど大きく）
+		var main_lbl := Label.new()
+		main_lbl.text = main_text
+		main_lbl.add_theme_font_size_override("font_size", 72)
+		main_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
+		main_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		main_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		main_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		main_lbl.set_anchors_preset(Control.PRESET_CENTER)
+		main_lbl.position = Vector2(-200.0, -120.0)
+		main_lbl.custom_minimum_size = Vector2(400.0, 0.0)
+		main_lbl.modulate.a = 0.0
+		overlay.add_child(main_lbl)
+	
+		# サブテキスト
+		var sub_lbl := Label.new()
+		sub_lbl.text = sub_text
+		sub_lbl.add_theme_font_size_override("font_size", 18)
+		sub_lbl.add_theme_color_override("font_color", Color(0.6, 0.7, 1.0, 0.85))
+		sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sub_lbl.set_anchors_preset(Control.PRESET_CENTER)
+		sub_lbl.position = Vector2(-200.0, 60.0)
+		sub_lbl.custom_minimum_size = Vector2(400.0, 0.0)
+		sub_lbl.modulate.a = 0.0
+		overlay.add_child(sub_lbl)
+	
+		# フェードイン → 待機 → フェードアウト → コールバック
+		var tw := create_tween()
+		tw.set_parallel(false)
+		tw.tween_property(main_lbl, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(sub_lbl,  "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_SINE)
+		tw.tween_interval(1.5)
+		tw.tween_property(overlay, "modulate:a", 0.0, 0.5).set_trans(Tween.TRANS_SINE)
+		tw.tween_callback(func():
+			overlay.queue_free()
+			on_done.call()
+		)
+	
+	# =====================================================================
 # AKINATOR 共通UI
 # =====================================================================
 func _show_aki_ui(phase_title: String, theme: String) -> void:
@@ -309,7 +359,7 @@ func _show_bg_ui() -> void:
 	_ui.add_child(_question_lbl)
 
 	_input_edit = LineEdit.new()
-	_input_edit.placeholder_text = "自由に回答を入力..."
+	_input_edit.placeholder_text = "例：桜が舞う江戸の城下町、深い宇宙の星雲..."
 	_input_edit.custom_minimum_size = Vector2(390.0, 52.0)
 	_input_edit.add_theme_font_size_override("font_size", 16)
 	_input_edit.position = Vector2(28.0, 600.0)
