@@ -96,7 +96,11 @@ func _ready() -> void:
 	wave_msg.add_theme_font_size_override("font_size", 28)
 	$UI.add_child(wave_msg)
 
-	_show_skin_select()
+	var sm : Node = get_node_or_null("/root/SkinManager")
+	if sm and sm.skin_confirmed:
+		_start_wave(0)
+	else:
+		_show_skin_select()
 
 func _show_skin_select() -> void:
 	var overlay := ColorRect.new()
