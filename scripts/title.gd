@@ -40,6 +40,10 @@ var _step_lbl     : Label         = null
 var _gen_queue   : Array = []
 var _gen_current : int   = 0
 
+# キー待ちコールバック
+var _key_callback : Callable = Callable()
+var _waiting_key  : bool = false
+
 const PLAYER_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているキャラクターを当てるゲームをします。テーマは「生まれ変わるとしたら？」です。ユーザーはすでにキャラクターを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。キャラクターが決まったら：[PLAYER:英語名]日本語の決定メッセージ。英語名はシンプルな英単語（robot、ninja、bearなど）。最初の質問から始めてください。"
 const ENEMY_SYSTEM  : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているものを当てるゲームをします。テーマは「嫌いなもの、または怖いもの」です。ユーザーはすでにそれを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。決まったら：[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！（英語名はシンプルな英単語）。最初の質問から始めてください。"
 const BG_SYSTEM     : String = "あなたはゲームアーティストのアシスタントです。ユーザーの自由回答から縦スクロールシューティングゲームの背景世界観を決定します。必要なら1〜2回追加質問し、背景プロンプトを生成してください。決定フォーマット（必須）：[BG:英語プロンプト]日本語の世界観説明。英語プロンプトはflux-schnell用。縦スクロールゲーム背景として映える情景を描写する短い英文。最初の質問から始めてください。"
@@ -75,16 +79,32 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _input(event: InputEvent) -> void:
+	# キー待ち中なら任意入力で次へ
+	if _waiting_key:
+		var hit := false
+		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+			hit = true
+		elif event is InputEventKey and (event as InputEventKey).pressed:
+			hit = true
+		elif event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed:
+			hit = true
+		if hit:
+			_waiting_key = false
+			var cb := _key_callback
+			_key_callback = Callable()
+			cb.call()
+		return
+
 	if _screen != Screen.TITLE:
 		return
-	var hit : bool = false
+	var hit2 := false
 	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
-		hit = true
+		hit2 = true
 	elif event is InputEventKey and (event as InputEventKey).pressed:
-		hit = true
+		hit2 = true
 	elif event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed:
-		hit = true
-	if hit:
+		hit2 = true
+	if hit2:
 		_show_menu()
 
 func _draw() -> void:
@@ -106,6 +126,30 @@ func _clear_ui() -> void:
 	_question_lbl = null
 	_choices_vbox = null
 	_input_edit   = null
+
+# =====================================================================
+# キー待ち
+# =====================================================================
+func _wait_for_key(on_next: Callable) -> void:
+	# 「Tap to continue」ラベルを追加
+	var lbl := Label.new()
+	lbl.name = "TapToContinue"
+	lbl.text = "Tap or Press Any Key"
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 1.0, 0.9))
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.set_anchors_preset(Control.PRESET_CENTER)
+	lbl.position = Vector2(-160.0, 180.0)
+	lbl.custom_minimum_size = Vector2(320.0, 0.0)
+	_ui.add_child(lbl)
+
+	var tw := create_tween()
+	tw.set_loops(-1)
+	tw.tween_property(lbl, "modulate:a", 0.2, 0.6).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(lbl, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+
+	_key_callback = on_next
+	_waiting_key  = true
 
 # =====================================================================
 # TITLE
@@ -223,7 +267,6 @@ func _show_splash(main_text: String, sub_text: String, on_done: Callable) -> voi
 	tw.tween_property(sub_lbl,  "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_SINE)
 	tw.tween_interval(1.5)
 	tw.tween_property(overlay,  "modulate:a", 0.0, 0.5).set_trans(Tween.TRANS_SINE)
-	# ラムダを変数に代入してから接続
 	var cb := func(): overlay.queue_free(); on_done.call()
 	tw.finished.connect(cb)
 
@@ -295,7 +338,7 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 		_choices_vbox.add_child(btn)
 		btn.pressed.connect(_on_choice_pressed.bind(choice))
 
-# 背景専用UI（テキスト入力）
+# 背景専用UI
 func _show_bg_ui() -> void:
 	_clear_ui()
 	var cx : float = VP_W * 0.5
@@ -375,7 +418,6 @@ func _show_bg_ui() -> void:
 	_ui.add_child(send_btn)
 
 	send_btn.pressed.connect(_on_bg_send_pressed)
-	# ラムダを変数に代入
 	var submit_cb := func(_t: String): _on_bg_send_pressed()
 	_input_edit.text_submitted.connect(submit_cb)
 
@@ -478,6 +520,15 @@ func _show_decision(text: String) -> void:
 	if is_instance_valid(_question_lbl):
 		_question_lbl.text = text
 		_question_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
+	# ボタンを全部隠す
+	if is_instance_valid(_choices_vbox):
+		_choices_vbox.hide()
+	# 送信ボタンも隠す
+	var sbn := _ui.get_node_or_null("SendBtn")
+	if sbn:
+		sbn.hide()
+	if is_instance_valid(_input_edit):
+		_input_edit.hide()
 
 # =====================================================================
 # CLAUDE 呼び出し（n8nプロキシ経由）
@@ -536,20 +587,20 @@ func _parse_reply(reply: String) -> void:
 		_player_en  = mp.get_string(1).strip_edges()
 		_player_msg = reply.replace(mp.get_string(), "").strip_edges()
 		_show_decision("ありがとう、見えてきました…\n\n" + _player_msg)
-		await get_tree().create_timer(3.0).timeout
-		_start_enemy_akinator()
+		_wait_for_key(_start_enemy_akinator)
+
 	elif _screen == Screen.ENEMY_AKI and me != null:
 		_enemy_en  = me.get_string(1).strip_edges()
 		_enemy_msg = reply.replace(me.get_string(), "").strip_edges()
 		_show_decision("なるほど、強敵が現れそうですね…\n\n" + _enemy_msg)
-		await get_tree().create_timer(3.0).timeout
-		_start_bg_akinator()
+		_wait_for_key(_start_bg_akinator)
+
 	elif _screen == Screen.BG_AKI and mbg != null:
 		_bg_prompt = mbg.get_string(1).strip_edges()
 		var disp : String = reply.replace(mbg.get_string(), "").strip_edges()
 		_show_decision(disp)
-		await get_tree().create_timer(2.5).timeout
-		_start_generation()
+		_wait_for_key(_start_generation)
+
 	elif mq != null:
 		_update_question(mq.get_string(1).strip_edges())
 	else:
@@ -699,6 +750,5 @@ func _show_ready() -> void:
 	start_btn.custom_minimum_size = Vector2(330, 70)
 	start_btn.add_theme_font_size_override("font_size", 20)
 	vbox.add_child(start_btn)
-	# ラムダを変数に代入
 	var start_cb := func(): get_tree().change_scene_to_file("res://scenes/main.tscn")
 	start_btn.pressed.connect(start_cb)
