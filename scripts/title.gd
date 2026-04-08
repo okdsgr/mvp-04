@@ -1,75 +1,54 @@
 extends Node2D
 
-const GAME_TITLE  : String = "GROSBREAK"
-const N8N_URL     : String = "https://okdsgr.app.n8n.cloud/webhook/sprite-to-mvp04"
-const CLAUDE_URL  : String = "https://api.anthropic.com/v1/messages"
-const CLAUDE_MODEL: String = "claude-sonnet-4-20250514"
-const VP_W        : float  = 540.0
-const VP_H        : float  = 960.0
+const GAME_TITLE   : String = "GROSBREAK"
+const N8N_URL      : String = "https://okdsgr.app.n8n.cloud/webhook/sprite-to-mvp04"
+const CLAUDE_URL   : String = "https://api.anthropic.com/v1/messages"
+const CLAUDE_MODEL : String = "claude-sonnet-4-6"
+const VP_W         : float  = 540.0
+const VP_H         : float  = 960.0
+
+const CHOICES : Array = ["はい", "おそらくはい", "わからない", "おそらくいいえ", "いいえ"]
+const STEP_NAMES : Array = ["自機（待機）", "自機（歩き）", "白い敵", "黒い敵", "背景"]
 
 enum Screen { TITLE, MENU, PLAYER_AKI, ENEMY_AKI, BG_AKI, GENERATING, READY }
 var _screen : Screen = Screen.TITLE
 var _anim   : float  = 0.0
 var _orbs   : Array  = []
 
-# API
 var _api_key  : String = ""
-var _http_ai  : HTTPRequest = null  # Claude API用
-var _http_gen : HTTPRequest = null  # n8n生成用
+var _http_ai  : HTTPRequest = null
+var _http_gen : HTTPRequest = null
 var _waiting  : bool = false
 
-# Akinator会話履歴
 var _messages      : Array  = []
 var _system_prompt : String = ""
+var _cur_question  : String = ""
 
-# 決定したキャラ
-var _player_en : String = ""
-var _enemy_en  : String = ""
-var _bg_prompt : String = ""
-var _player_display : String = ""
-var _enemy_display  : String = ""
+var _player_en  : String = ""
+var _enemy_en   : String = ""
+var _bg_prompt  : String = ""
+var _player_msg : String = ""
+var _enemy_msg  : String = ""
 
-# UI
-var _ui        : CanvasLayer  = null
-var _chat_vbox : VBoxContainer = null
-var _input_edit: LineEdit      = null
-var _send_btn  : Button        = null
-var _progress_bar : ProgressBar = null
-var _progress_lbl : Label       = null
-var _step_lbl     : Label       = null
+var _ui           : CanvasLayer   = null
+var _history_vbox : VBoxContainer = null
+var _question_lbl : Label         = null
+var _choices_vbox : VBoxContainer = null
+var _input_edit   : LineEdit      = null
+var _progress_bar : ProgressBar   = null
+var _progress_lbl : Label         = null
+var _step_lbl     : Label         = null
 
-# 生成キュー
 var _gen_queue   : Array = []
 var _gen_current : int   = 0
-const STEP_NAMES : Array = ["自機（待機）", "自機（歩き）", "白い敵", "黒い敵", "背景"]
 
-# ===== システムプロンプト =====
-const PLAYER_SYSTEM : String = """あなたはアキネーターです。ユーザーとの会話から、縦スクロールシューティングゲームの「自機（プレイヤーキャラクター）」を3〜5回の質問で決定してください。
-質問は日本語で1文のみ、簡潔に。余分な説明は不要。
-キャラクターが決まったら必ず次のフォーマットで答えてください：
-[PLAYER:英語名]○○を自機として登場させますね！
-英語名はシンプルな英単語（例: robot, ninja, bear, rocket, cat）。"""
+const PLAYER_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているキャラクターを当てるゲームをします。テーマは「生まれ変わるとしたら？」です。ユーザーはすでにキャラクターを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。キャラクターが決まったら：[PLAYER:英語名]日本語の決定メッセージ。英語名はシンプルな英単語（robot、ninja、bearなど）。"
 
-const ENEMY_SYSTEM : String = """あなたはアキネーターです。ユーザーとの会話から、縦スクロールシューティングゲームの「敵キャラクター」を3〜5回の質問で決定してください。
-質問は日本語で1文のみ、簡潔に。余分な説明は不要。
-キャラクターが決まったら必ず次のフォーマットで答えてください：
-[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！
-英語名はシンプルな英単語（例: dragon, ghost, mushroom, cake）。"""
+const ENEMY_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているものを当てるゲームをします。テーマは「嫌いなもの、または怖いもの」です。ユーザーはすでにそれを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。決まったら：[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！（英語名はシンプルな英単語）。"
 
-const BG_SYSTEM : String = """あなたはゲームアーティストです。ユーザーの回答から縦スクロールシューティングゲームの背景世界観を2〜3回の質問で決定してください。
-質問は日本語で1文のみ。
-決定したら必ず次のフォーマットで答えてください：
-[BG:英語プロンプト]世界観が決まりました！
-英語プロンプトは画像生成AI用の短い英語プロンプト。縦スクロールゲームの背景として映える情景を描写してください。"""
+const BG_SYSTEM : String = "あなたはゲームアーティストのアシスタントです。ユーザーの自由回答から縦スクロールシューティングゲームの背景世界観を決定します。必要なら1〜2回追加質問し、背景プロンプトを生成してください。決定フォーマット（必須）：[BG:英語プロンプト]日本語の世界観説明。英語プロンプトはflux-schnell用。縦スクロールゲーム背景として映える情景を描写する短い英文。"
 
-# ===== 最初の質問 =====
-const PLAYER_Q1 : String = "生まれ変わるとしたら、どんな存在になりたいですか？"
-const ENEMY_Q1  : String = "嫌いなもの、または怖いものを思い浮かべてください。どんなものが頭に浮かびますか？"
-const BG_Q1     : String = "子どもの頃、好きだった絵本や物語の世界を教えてください。"
-
-# =====================================================================
 func _ready() -> void:
-	# API key読み込み（環境変数 → ファイル）
 	_api_key = OS.get_environment("ANTHROPIC_API_KEY")
 	if _api_key.is_empty():
 		var f := FileAccess.open("res://config/api_key.txt", FileAccess.READ)
@@ -133,14 +112,15 @@ func _draw() -> void:
 			draw_circle(pos, r,       Color(1.0, 1.0, 1.0, 0.35 * pulse))
 		else:
 			draw_circle(pos, r * 2.0, Color(0.55, 0.0, 0.85, 0.07 * pulse))
-			draw_circle(pos, r,       Color(0.75, 0.2, 1.0, 0.45 * pulse))
+			draw_circle(pos, r,       Color(0.75, 0.2, 1.0,  0.45 * pulse))
 
 func _clear_ui() -> void:
 	for c : Node in _ui.get_children():
 		c.queue_free()
-	_chat_vbox  = null
-	_input_edit = null
-	_send_btn   = null
+	_history_vbox = null
+	_question_lbl = null
+	_choices_vbox = null
+	_input_edit   = null
 
 # =====================================================================
 # TITLE
@@ -218,131 +198,253 @@ func _on_start_default() -> void:
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 # =====================================================================
-# AKINATOR 共通UI
+# AKINATOR 共通UI（ボタン選択式）
 # =====================================================================
-func _show_akinator_ui(phase_title: String) -> void:
+func _show_aki_ui(phase_title: String, theme: String) -> void:
 	_clear_ui()
 	var cx : float = VP_W * 0.5
 
-	var title_lbl := Label.new()
-	title_lbl.text = phase_title
-	title_lbl.add_theme_font_size_override("font_size", 17)
-	title_lbl.add_theme_color_override("font_color", Color(0.6, 0.7, 1.0, 0.9))
-	title_lbl.position = Vector2(cx - 100.0, 38.0)
-	_ui.add_child(title_lbl)
+	# フェーズタイトル
+	var phase_lbl := Label.new()
+	phase_lbl.text = phase_title
+	phase_lbl.add_theme_font_size_override("font_size", 16)
+	phase_lbl.add_theme_color_override("font_color", Color(0.55, 0.65, 1.0, 0.85))
+	phase_lbl.position = Vector2(cx - 100.0, 30.0)
+	_ui.add_child(phase_lbl)
 
-	# チャット履歴エリア
+	# テーマ（大きく・目立つ色）
+	var theme_lbl := Label.new()
+	theme_lbl.text = theme
+	theme_lbl.add_theme_font_size_override("font_size", 19)
+	theme_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5, 0.95))
+	theme_lbl.position = Vector2(28.0, 68.0)
+	theme_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	theme_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
+	_ui.add_child(theme_lbl)
+
+	# 区切り線
+	var line := ColorRect.new()
+	line.position = Vector2(28.0, 120.0)
+	line.size = Vector2(VP_W - 56.0, 1.5)
+	line.color = Color(0.4, 0.4, 0.7, 0.4)
+	_ui.add_child(line)
+
+	# 履歴エリア（スクロール）
 	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(28.0, 80.0)
-	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 560.0)
+	scroll.position = Vector2(28.0, 130.0)
+	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 340.0)
 	_ui.add_child(scroll)
 
-	_chat_vbox = VBoxContainer.new()
-	_chat_vbox.add_theme_constant_override("separation", 12)
-	_chat_vbox.custom_minimum_size = Vector2(VP_W - 70.0, 0)
-	scroll.add_child(_chat_vbox)
+	_history_vbox = VBoxContainer.new()
+	_history_vbox.add_theme_constant_override("separation", 8)
+	_history_vbox.custom_minimum_size = Vector2(VP_W - 70.0, 0)
+	scroll.add_child(_history_vbox)
 
-	# 入力エリア
+	# 区切り線2
+	var line2 := ColorRect.new()
+	line2.position = Vector2(28.0, 478.0)
+	line2.size = Vector2(VP_W - 56.0, 1.5)
+	line2.color = Color(0.4, 0.4, 0.7, 0.4)
+	_ui.add_child(line2)
+
+	# 現在の質問
+	_question_lbl = Label.new()
+	_question_lbl.text = "考え中..."
+	_question_lbl.add_theme_font_size_override("font_size", 20)
+	_question_lbl.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0))
+	_question_lbl.position = Vector2(28.0, 492.0)
+	_question_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_question_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 80.0)
+	_ui.add_child(_question_lbl)
+
+	# 5択ボタン
+	_choices_vbox = VBoxContainer.new()
+	_choices_vbox.position = Vector2(cx - 145.0, 600.0)
+	_choices_vbox.add_theme_constant_override("separation", 10)
+	_ui.add_child(_choices_vbox)
+
+	for choice : String in CHOICES:
+		var btn := Button.new()
+		btn.text = choice
+		btn.custom_minimum_size = Vector2(290, 52)
+		btn.add_theme_font_size_override("font_size", 17)
+		btn.disabled = true
+		_choices_vbox.add_child(btn)
+		btn.pressed.connect(_on_choice_pressed.bind(choice))
+
+# 背景専用UI（テキスト入力）
+func _show_bg_ui() -> void:
+	_clear_ui()
+	var cx : float = VP_W * 0.5
+
+	var phase_lbl := Label.new()
+	phase_lbl.text = "背景を決めよう ③/③"
+	phase_lbl.add_theme_font_size_override("font_size", 16)
+	phase_lbl.add_theme_color_override("font_color", Color(0.55, 0.65, 1.0, 0.85))
+	phase_lbl.position = Vector2(cx - 100.0, 30.0)
+	_ui.add_child(phase_lbl)
+
+	var theme_lbl := Label.new()
+	theme_lbl.text = "どんな世界を飛び回りたいですか？"
+	theme_lbl.add_theme_font_size_override("font_size", 19)
+	theme_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5, 0.95))
+	theme_lbl.position = Vector2(28.0, 68.0)
+	theme_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	theme_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
+	_ui.add_child(theme_lbl)
+
+	var line := ColorRect.new()
+	line.position = Vector2(28.0, 120.0)
+	line.size = Vector2(VP_W - 56.0, 1.5)
+	line.color = Color(0.4, 0.4, 0.7, 0.4)
+	_ui.add_child(line)
+
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(28.0, 130.0)
+	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 300.0)
+	_ui.add_child(scroll)
+
+	_history_vbox = VBoxContainer.new()
+	_history_vbox.add_theme_constant_override("separation", 8)
+	_history_vbox.custom_minimum_size = Vector2(VP_W - 70.0, 0)
+	scroll.add_child(_history_vbox)
+
+	var line2 := ColorRect.new()
+	line2.position = Vector2(28.0, 438.0)
+	line2.size = Vector2(VP_W - 56.0, 1.5)
+	line2.color = Color(0.4, 0.4, 0.7, 0.4)
+	_ui.add_child(line2)
+
+	_question_lbl = Label.new()
+	_question_lbl.text = "考え中..."
+	_question_lbl.add_theme_font_size_override("font_size", 18)
+	_question_lbl.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0))
+	_question_lbl.position = Vector2(28.0, 450.0)
+	_question_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_question_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 80.0)
+	_ui.add_child(_question_lbl)
+
 	_input_edit = LineEdit.new()
-	_input_edit.placeholder_text = "回答を入力..."
+	_input_edit.placeholder_text = "自由に回答を入力..."
 	_input_edit.custom_minimum_size = Vector2(390.0, 52.0)
 	_input_edit.add_theme_font_size_override("font_size", 16)
-	_input_edit.position = Vector2(28.0, 860.0)
+	_input_edit.position = Vector2(28.0, 600.0)
+	_input_edit.editable = false
 	_ui.add_child(_input_edit)
 
-	_send_btn = Button.new()
-	_send_btn.text = "送信"
-	_send_btn.custom_minimum_size = Vector2(90.0, 52.0)
-	_send_btn.add_theme_font_size_override("font_size", 16)
-	_send_btn.position = Vector2(430.0, 860.0)
-	_ui.add_child(_send_btn)
+	var send_btn := Button.new()
+	send_btn.name = "SendBtn"
+	send_btn.text = "送信"
+	send_btn.custom_minimum_size = Vector2(90.0, 52.0)
+	send_btn.add_theme_font_size_override("font_size", 16)
+	send_btn.position = Vector2(430.0, 600.0)
+	send_btn.disabled = true
+	_ui.add_child(send_btn)
 
-	_send_btn.pressed.connect(_on_send_pressed)
-	_input_edit.text_submitted.connect(func(_t: String): _on_send_pressed())
+	send_btn.pressed.connect(_on_bg_send_pressed)
+	_input_edit.text_submitted.connect(func(_t: String): _on_bg_send_pressed())
 
-func _on_send_pressed() -> void:
+func _on_bg_send_pressed() -> void:
 	if _waiting or _input_edit == null:
 		return
 	var answer : String = _input_edit.text.strip_edges()
 	if answer.is_empty():
 		return
 	_input_edit.text = ""
-	_add_msg_user(answer)
-	_call_claude(answer)
-
-func _add_msg_claude(text: String) -> void:
-	if _chat_vbox == null:
-		return
-	var lbl := Label.new()
-	lbl.text = "🎮  " + text
-	lbl.add_theme_font_size_override("font_size", 15)
-	lbl.add_theme_color_override("font_color", Color(0.75, 0.9, 1.0))
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	lbl.custom_minimum_size = Vector2(VP_W - 80.0, 0)
-	_chat_vbox.add_child(lbl)
-
-func _add_msg_user(text: String) -> void:
-	if _chat_vbox == null:
-		return
-	var lbl := Label.new()
-	lbl.text = "▶  " + text
-	lbl.add_theme_font_size_override("font_size", 15)
-	lbl.add_theme_color_override("font_color", Color(0.6, 1.0, 0.65))
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	lbl.custom_minimum_size = Vector2(VP_W - 80.0, 0)
-	_chat_vbox.add_child(lbl)
-
-func _set_waiting(on: bool) -> void:
-	_waiting = on
-	if is_instance_valid(_send_btn):
-		_send_btn.disabled = on
-		_send_btn.text = "..." if on else "送信"
-	if is_instance_valid(_input_edit):
-		_input_edit.editable = not on
+	_add_history("", answer)
+	_messages.append({"role": "user", "content": answer})
+	_set_waiting(true)
+	_do_claude_request()
 
 # =====================================================================
-# PLAYER AKINATOR
+# AKINATOR フロー
 # =====================================================================
 func _start_player_akinator() -> void:
 	_screen = Screen.PLAYER_AKI
 	_messages = []
+	_cur_question = ""
 	_system_prompt = PLAYER_SYSTEM
-	_show_akinator_ui("自機を決めよう ①/③")
-	_messages.append({"role": "assistant", "content": PLAYER_Q1})
-	_add_msg_claude(PLAYER_Q1)
+	_show_aki_ui("自機を決めよう ①/③", "生まれ変わるとしたら、\nどんな存在になりたいですか？")
+	_call_claude_start()
 
-# =====================================================================
-# ENEMY AKINATOR
-# =====================================================================
 func _start_enemy_akinator() -> void:
 	_screen = Screen.ENEMY_AKI
 	_messages = []
+	_cur_question = ""
 	_system_prompt = ENEMY_SYSTEM
-	_show_akinator_ui("敵を決めよう ②/③")
-	_messages.append({"role": "assistant", "content": ENEMY_Q1})
-	_add_msg_claude(ENEMY_Q1)
+	_show_aki_ui("敵を決めよう ②/③", "嫌いなもの、または怖いものを\n頭の中で思い浮かべてください")
+	_call_claude_start()
 
-# =====================================================================
-# BG AKINATOR
-# =====================================================================
 func _start_bg_akinator() -> void:
 	_screen = Screen.BG_AKI
 	_messages = []
+	_cur_question = ""
 	_system_prompt = BG_SYSTEM
-	_show_akinator_ui("背景の世界観を決めよう ③/③")
-	_messages.append({"role": "assistant", "content": BG_Q1})
-	_add_msg_claude(BG_Q1)
+	_show_bg_ui()
+	_call_claude_start()
+
+func _call_claude_start() -> void:
+	_set_waiting(true)
+	_messages.append({"role": "user", "content": "スタート"})
+	_do_claude_request()
+
+func _on_choice_pressed(choice: String) -> void:
+	if _waiting:
+		return
+	_add_history(_cur_question, choice)
+	_messages.append({"role": "user", "content": choice})
+	_set_waiting(true)
+	_do_claude_request()
+
+# =====================================================================
+# UI ヘルパー
+# =====================================================================
+func _set_waiting(on: bool) -> void:
+	_waiting = on
+	if is_instance_valid(_question_lbl) and on:
+		_question_lbl.text = "考え中..."
+	if is_instance_valid(_choices_vbox):
+		for btn : Node in _choices_vbox.get_children():
+			if btn is Button:
+				(btn as Button).disabled = on
+	if is_instance_valid(_input_edit):
+		_input_edit.editable = not on
+	var send_btn_node := _ui.get_node_or_null("SendBtn")
+	if send_btn_node and send_btn_node is Button:
+		(send_btn_node as Button).disabled = on
+
+func _update_question(text: String) -> void:
+	if is_instance_valid(_question_lbl):
+		_question_lbl.text = text
+	_cur_question = text
+	_set_waiting(false)
+
+func _add_history(question: String, answer: String) -> void:
+	if _history_vbox == null:
+		return
+	var lbl := Label.new()
+	if question.is_empty():
+		lbl.text = "▶  " + answer
+	else:
+		lbl.text = "Q: " + question + "\n→  " + answer
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", Color(0.55, 0.7, 0.85, 0.75))
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	lbl.custom_minimum_size = Vector2(VP_W - 80.0, 0)
+	_history_vbox.add_child(lbl)
+
+func _show_decision(text: String) -> void:
+	if is_instance_valid(_question_lbl):
+		_question_lbl.text = text
+		_question_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
 
 # =====================================================================
 # CLAUDE API
 # =====================================================================
-func _call_claude(user_answer: String) -> void:
+func _do_claude_request() -> void:
 	if _api_key.is_empty():
-		_add_msg_claude("⚠ APIキーが設定されていません。\nres://config/api_key.txt にキーを記入してください。")
+		_update_question("APIキーが設定されていません。\nres://config/api_key.txt にキーを記入してください。")
 		return
-
-	_set_waiting(true)
-	_messages.append({"role": "user", "content": user_answer})
 
 	var body : String = JSON.stringify({
 		"model": CLAUDE_MODEL,
@@ -362,66 +464,73 @@ func _call_claude(user_answer: String) -> void:
 	_http_ai.request(CLAUDE_URL, headers, HTTPClient.METHOD_POST, body)
 
 func _on_claude_response(_r: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
-	_set_waiting(false)
-
 	var text : String = body.get_string_from_utf8()
-	var json = JSON.parse_string(text)
+	print("[Claude] code=", code, " | ", text.substr(0, 150))
 
+	var json = JSON.parse_string(text)
 	var reply : String = ""
-	if json and json.has("content") and (json["content"] as Array).size() > 0:
-		reply = ((json["content"] as Array)[0] as Dictionary)["text"]
+
+	if json == null:
+		_update_question("エラー: レスポンスの解析に失敗しました (%d)" % code)
+		return
+
+	if json.has("content") and (json["content"] as Array).size() > 0:
+		reply = ((json["content"] as Array)[0] as Dictionary).get("text", "")
+	elif json.has("error"):
+		var err_msg : String = (json["error"] as Dictionary).get("message", str(code))
+		_update_question("エラー (%d): %s" % [code, err_msg])
+		return
 	else:
-		_add_msg_claude("⚠ エラーが発生しました（%d）。もう一度試してください。" % code)
+		_update_question("エラー (%d): 不明なエラー" % code)
 		return
 
 	_messages.append({"role": "assistant", "content": reply})
+	_parse_reply(reply)
 
-	match _screen:
-		Screen.PLAYER_AKI: _parse_player(reply)
-		Screen.ENEMY_AKI:  _parse_enemy(reply)
-		Screen.BG_AKI:     _parse_bg(reply)
+func _parse_reply(reply: String) -> void:
+	# [Q]質問文 を検索
+	var re_q := RegEx.new()
+	re_q.compile("\\[Q\\](.+)")
+	var mq = re_q.search(reply)
 
-# ===== パース =====
-func _parse_player(reply: String) -> void:
-	var re := RegEx.new()
-	re.compile("\\[PLAYER:([a-zA-Z _]+)\\]")
-	var m = re.search(reply)
-	var display : String = reply.replace(m.get_string() if m else "", "").strip_edges() if m else reply
-	_add_msg_claude(display)
-	if m:
-		_player_en      = m.get_string(1).strip_edges()
-		_player_display = _extract_quoted(reply)
-		await get_tree().create_timer(2.0).timeout
+	# [PLAYER:name] を検索
+	var re_p := RegEx.new()
+	re_p.compile("\\[PLAYER:([a-zA-Z ]+)\\]")
+	var mp = re_p.search(reply)
+
+	# [ENEMY:name] を検索
+	var re_e := RegEx.new()
+	re_e.compile("\\[ENEMY:([a-zA-Z ]+)\\]")
+	var me = re_e.search(reply)
+
+	# [BG:prompt] を検索（]以外の文字で終わる）
+	var re_bg := RegEx.new()
+	re_bg.compile("\\[BG:([^\\]]+)\\]")
+	var mbg = re_bg.search(reply)
+
+	if _screen == Screen.PLAYER_AKI and mp != null:
+		_player_en = mp.get_string(1).strip_edges()
+		_player_msg = reply.replace(mp.get_string(), "").strip_edges()
+		_show_decision(_player_msg)
+		await get_tree().create_timer(2.5).timeout
 		_start_enemy_akinator()
-
-func _parse_enemy(reply: String) -> void:
-	var re := RegEx.new()
-	re.compile("\\[ENEMY:([a-zA-Z _]+)\\]")
-	var m = re.search(reply)
-	var display : String = reply.replace(m.get_string() if m else "", "").strip_edges() if m else reply
-	_add_msg_claude(display)
-	if m:
-		_enemy_en      = m.get_string(1).strip_edges()
-		_enemy_display = _extract_quoted(reply)
-		await get_tree().create_timer(2.0).timeout
+	elif _screen == Screen.ENEMY_AKI and me != null:
+		_enemy_en = me.get_string(1).strip_edges()
+		_enemy_msg = reply.replace(me.get_string(), "").strip_edges()
+		_show_decision(_enemy_msg)
+		await get_tree().create_timer(2.5).timeout
 		_start_bg_akinator()
-
-func _parse_bg(reply: String) -> void:
-	var re := RegEx.new()
-	re.compile("\\[BG:(.+?)\\]")
-	var m = re.search(reply)
-	var display : String = reply.replace(m.get_string() if m else "", "").strip_edges() if m else reply
-	_add_msg_claude(display)
-	if m:
-		_bg_prompt = m.get_string(1).strip_edges()
-		await get_tree().create_timer(2.0).timeout
+	elif _screen == Screen.BG_AKI and mbg != null:
+		_bg_prompt = mbg.get_string(1).strip_edges()
+		var disp : String = reply.replace(mbg.get_string(), "").strip_edges()
+		_show_decision(disp)
+		await get_tree().create_timer(2.5).timeout
 		_start_generation()
-
-func _extract_quoted(text: String) -> String:
-	var re := RegEx.new()
-	re.compile("「(.+?)」")
-	var m = re.search(text)
-	return m.get_string(1) if m else ""
+	elif mq != null:
+		_update_question(mq.get_string(1).strip_edges())
+	else:
+		# フォールバック：質問として表示
+		_update_question(reply.strip_edges())
 
 # =====================================================================
 # GENERATING
@@ -449,12 +558,12 @@ func _start_generation() -> void:
 	_progress_bar = ProgressBar.new()
 	_progress_bar.min_value = 0.0
 	_progress_bar.max_value = 5.0
-	_progress_bar.value = 0.0
+	_progress_bar.value     = 0.0
 	_progress_bar.custom_minimum_size = Vector2(330, 28)
 	vbox.add_child(_progress_bar)
 
 	_step_lbl = Label.new()
-	_step_lbl.text = "⏳ 準備中..."
+	_step_lbl.text = "準備中..."
 	_step_lbl.add_theme_font_size_override("font_size", 14)
 	_step_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
 	vbox.add_child(_step_lbl)
@@ -468,9 +577,9 @@ func _start_generation() -> void:
 	_send_gen_next()
 
 func _build_gen_queue() -> Array:
-	var p : String = _player_en if not _player_en.is_empty() else "boy"
-	var e : String = _enemy_en  if not _enemy_en.is_empty()  else "ghost"
-	var bg: String = _bg_prompt if not _bg_prompt.is_empty() else "fantasy sky landscape"
+	var p  : String = _player_en if not _player_en.is_empty() else "boy"
+	var e  : String = _enemy_en  if not _enemy_en.is_empty()  else "ghost"
+	var bg : String = _bg_prompt if not _bg_prompt.is_empty() else "fantasy sky landscape"
 	return [
 		{"filename": "player_custom_idle", "prompt": "cute chibi %s character, back view, standing idle pose, white background, game sprite pixel art" % p},
 		{"filename": "player_custom_walk", "prompt": "cute chibi %s character, back view, walking mid-step, white background, game sprite pixel art" % p},
@@ -485,7 +594,7 @@ func _send_gen_next() -> void:
 		return
 	var item : Dictionary = _gen_queue[_gen_current]
 	if is_instance_valid(_step_lbl):
-		_step_lbl.text = "⏳ %s を生成中..." % STEP_NAMES[_gen_current]
+		_step_lbl.text = "%s を生成中..." % STEP_NAMES[_gen_current]
 	if is_instance_valid(_progress_lbl):
 		_progress_lbl.text = "%d / %d" % [_gen_current, _gen_queue.size()]
 	if is_instance_valid(_progress_bar):
@@ -506,12 +615,11 @@ func _on_gen_done(_r: int, _c: int, _h: PackedStringArray, _b: PackedByteArray) 
 func _on_all_generated() -> void:
 	_http_gen.request_completed.disconnect(_on_gen_done)
 	if is_instance_valid(_step_lbl):
-		_step_lbl.text = "⏳ スプライトを同期中..."
+		_step_lbl.text = "スプライトを同期中..."
 
 	var path : String = ProjectSettings.globalize_path("res://")
 	var out   : Array  = []
 	OS.execute("git", ["-C", path, "pull"], out, true)
-	print("git pull: ", out)
 
 	var sm : Node = get_node_or_null("/root/SkinManager")
 	if sm:
@@ -550,11 +658,9 @@ func _show_ready() -> void:
 	r_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
 	vbox.add_child(r_lbl)
 
-	if not _player_display.is_empty() or not _player_en.is_empty():
+	if not _player_en.is_empty() or not _enemy_en.is_empty():
 		var i_lbl := Label.new()
-		var p_name : String = _player_display if not _player_display.is_empty() else _player_en
-		var e_name : String = _enemy_display  if not _enemy_display.is_empty()  else _enemy_en
-		i_lbl.text = "自機: %s  /  敵: %s" % [p_name, e_name]
+		i_lbl.text = "自機: %s  /  敵: %s" % [_player_en, _enemy_en]
 		i_lbl.add_theme_font_size_override("font_size", 15)
 		i_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0, 0.9))
 		vbox.add_child(i_lbl)
