@@ -3,11 +3,10 @@ extends Node2D
 const GAME_TITLE   : String = "GROSBREAK"
 const N8N_URL      : String = "https://okdsgr.app.n8n.cloud/webhook/sprite-to-mvp04"
 const CLAUDE_URL   : String = "https://okdsgr.app.n8n.cloud/webhook/akinator-claude"
-const CLAUDE_MODEL : String = "claude-sonnet-4-6"
 const VP_W         : float  = 540.0
 const VP_H         : float  = 960.0
 
-const CHOICES : Array = ["はい", "おそらくはい", "わからない", "おそらくいいえ", "いいえ"]
+const CHOICES    : Array = ["はい", "おそらくはい", "わからない", "おそらくいいえ", "いいえ"]
 const STEP_NAMES : Array = ["自機（待機）", "自機（歩き）", "白い敵", "黒い敵", "背景"]
 
 enum Screen { TITLE, MENU, PLAYER_AKI, ENEMY_AKI, BG_AKI, GENERATING, READY }
@@ -15,7 +14,6 @@ var _screen : Screen = Screen.TITLE
 var _anim   : float  = 0.0
 var _orbs   : Array  = []
 
-var _api_key  : String = ""
 var _http_ai  : HTTPRequest = null
 var _http_gen : HTTPRequest = null
 var _waiting  : bool = false
@@ -42,20 +40,13 @@ var _step_lbl     : Label         = null
 var _gen_queue   : Array = []
 var _gen_current : int   = 0
 
-const PLAYER_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているキャラクターを当てるゲームをします。テーマは「生まれ変わるとしたら？」です。ユーザーはすでにキャラクターを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。キャラクターが決まったら：[PLAYER:英語名]日本語の決定メッセージ。英語名はシンプルな英単語（robot、ninja、bearなど）。"
+const PLAYER_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているキャラクターを当てるゲームをします。テーマは「生まれ変わるとしたら？」です。ユーザーはすでにキャラクターを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。キャラクターが決まったら：[PLAYER:英語名]日本語の決定メッセージ。英語名はシンプルな英単語（robot、ninja、bearなど）。最初の質問から始めてください。"
 
-const ENEMY_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているものを当てるゲームをします。テーマは「嫌いなもの、または怖いもの」です。ユーザーはすでにそれを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。決まったら：[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！（英語名はシンプルな英単語）。"
+const ENEMY_SYSTEM : String = "あなたはアキネーターです。ユーザーが頭の中で思い浮かべているものを当てるゲームをします。テーマは「嫌いなもの、または怖いもの」です。ユーザーはすでにそれを心の中で決めています。5〜8回のYes/No質問で絞り込んでください。ユーザーは「はい／おそらくはい／わからない／おそらくいいえ／いいえ」のどれかで答えます。質問は必ずこのフォーマットで出力：[Q]質問文（1文のみ）。決まったら：[ENEMY:英語名]白い○○と黒い○○を敵として登場させますね！（英語名はシンプルな英単語）。最初の質問から始めてください。"
 
-const BG_SYSTEM : String = "あなたはゲームアーティストのアシスタントです。ユーザーの自由回答から縦スクロールシューティングゲームの背景世界観を決定します。必要なら1〜2回追加質問し、背景プロンプトを生成してください。決定フォーマット（必須）：[BG:英語プロンプト]日本語の世界観説明。英語プロンプトはflux-schnell用。縦スクロールゲーム背景として映える情景を描写する短い英文。"
+const BG_SYSTEM : String = "あなたはゲームアーティストのアシスタントです。ユーザーの自由回答から縦スクロールシューティングゲームの背景世界観を決定します。必要なら1〜2回追加質問し、背景プロンプトを生成してください。決定フォーマット（必須）：[BG:英語プロンプト]日本語の世界観説明。英語プロンプトはflux-schnell用。縦スクロールゲーム背景として映える情景を描写する短い英文。最初の質問から始めてください。"
 
 func _ready() -> void:
-	_api_key = OS.get_environment("ANTHROPIC_API_KEY")
-	if _api_key.is_empty():
-		var f := FileAccess.open("res://config/api_key.txt", FileAccess.READ)
-		if f:
-			_api_key = f.get_line().strip_edges()
-			f.close()
-
 	RenderingServer.set_default_clear_color(Color(0.04, 0.04, 0.10, 1.0))
 	randomize()
 
@@ -152,9 +143,9 @@ func _show_title() -> void:
 	_ui.add_child(press)
 
 	var tw := create_tween()
-	tw.set_loops()
-	tw.tween_property(press, "modulate:a", 0.1, 0.75)
-	tw.tween_property(press, "modulate:a", 1.0, 0.75)
+	tw.set_loops(-1)
+	tw.tween_property(press, "modulate:a", 0.1, 0.75).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(press, "modulate:a", 1.0, 0.75).set_trans(Tween.TRANS_SINE)
 
 # =====================================================================
 # MENU
@@ -198,13 +189,12 @@ func _on_start_default() -> void:
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 # =====================================================================
-# AKINATOR 共通UI（ボタン選択式）
+# AKINATOR 共通UI
 # =====================================================================
 func _show_aki_ui(phase_title: String, theme: String) -> void:
 	_clear_ui()
 	var cx : float = VP_W * 0.5
 
-	# フェーズタイトル
 	var phase_lbl := Label.new()
 	phase_lbl.text = phase_title
 	phase_lbl.add_theme_font_size_override("font_size", 16)
@@ -212,7 +202,6 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 	phase_lbl.position = Vector2(cx - 100.0, 30.0)
 	_ui.add_child(phase_lbl)
 
-	# テーマ（大きく・目立つ色）
 	var theme_lbl := Label.new()
 	theme_lbl.text = theme
 	theme_lbl.add_theme_font_size_override("font_size", 19)
@@ -222,14 +211,12 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 	theme_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 0)
 	_ui.add_child(theme_lbl)
 
-	# 区切り線
 	var line := ColorRect.new()
 	line.position = Vector2(28.0, 120.0)
 	line.size = Vector2(VP_W - 56.0, 1.5)
 	line.color = Color(0.4, 0.4, 0.7, 0.4)
 	_ui.add_child(line)
 
-	# 履歴エリア（スクロール）
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(28.0, 130.0)
 	scroll.custom_minimum_size = Vector2(VP_W - 56.0, 340.0)
@@ -240,14 +227,12 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 	_history_vbox.custom_minimum_size = Vector2(VP_W - 70.0, 0)
 	scroll.add_child(_history_vbox)
 
-	# 区切り線2
 	var line2 := ColorRect.new()
 	line2.position = Vector2(28.0, 478.0)
 	line2.size = Vector2(VP_W - 56.0, 1.5)
 	line2.color = Color(0.4, 0.4, 0.7, 0.4)
 	_ui.add_child(line2)
 
-	# 現在の質問
 	_question_lbl = Label.new()
 	_question_lbl.text = "考え中..."
 	_question_lbl.add_theme_font_size_override("font_size", 20)
@@ -257,7 +242,6 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 	_question_lbl.custom_minimum_size = Vector2(VP_W - 56.0, 80.0)
 	_ui.add_child(_question_lbl)
 
-	# 5択ボタン
 	_choices_vbox = VBoxContainer.new()
 	_choices_vbox.position = Vector2(cx - 145.0, 600.0)
 	_choices_vbox.add_theme_constant_override("separation", 10)
@@ -272,7 +256,7 @@ func _show_aki_ui(phase_title: String, theme: String) -> void:
 		_choices_vbox.add_child(btn)
 		btn.pressed.connect(_on_choice_pressed.bind(choice))
 
-# 背景専用UI（テキスト入力）
+# 背景専用UI
 func _show_bg_ui() -> void:
 	_clear_ui()
 	var cx : float = VP_W * 0.5
@@ -409,9 +393,9 @@ func _set_waiting(on: bool) -> void:
 				(btn as Button).disabled = on
 	if is_instance_valid(_input_edit):
 		_input_edit.editable = not on
-	var send_btn_node := _ui.get_node_or_null("SendBtn")
-	if send_btn_node and send_btn_node is Button:
-		(send_btn_node as Button).disabled = on
+	var sbn := _ui.get_node_or_null("SendBtn")
+	if sbn and sbn is Button:
+		(sbn as Button).disabled = on
 
 func _update_question(text: String) -> void:
 	if is_instance_valid(_question_lbl):
@@ -439,24 +423,15 @@ func _show_decision(text: String) -> void:
 		_question_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6))
 
 # =====================================================================
-# CLAUDE API
+# n8n PROXY 経由 CLAUDE 呼び出し
 # =====================================================================
 func _do_claude_request() -> void:
-	if _api_key.is_empty():
-		_update_question("APIキーが設定されていません。\nres://config/api_key.txt にキーを記入してください。")
-		return
-
+	# n8nプロキシに {system, messages} を送信（APIキー不要）
 	var body : String = JSON.stringify({
-		"model": CLAUDE_MODEL,
-		"max_tokens": 400,
-		"system": _system_prompt,
+		"system":   _system_prompt,
 		"messages": _messages,
 	})
-	var headers : PackedStringArray = [
-		"Content-Type: application/json",
-		"x-api-key: " + _api_key,
-		"anthropic-version: 2023-06-01",
-	]
+	var headers : PackedStringArray = ["Content-Type: application/json"]
 
 	if _http_ai.request_completed.is_connected(_on_claude_response):
 		_http_ai.request_completed.disconnect(_on_claude_response)
@@ -471,51 +446,47 @@ func _on_claude_response(_r: int, code: int, _h: PackedStringArray, body: Packed
 	var reply : String = ""
 
 	if json == null:
-		_update_question("エラー: レスポンスの解析に失敗しました (%d)" % code)
+		_update_question("エラー: JSON解析失敗 (%d)" % code)
 		return
 
-	if json.has("content") and (json["content"] as Array).size() > 0:
-		reply = ((json["content"] as Array)[0] as Dictionary).get("text", "")
+	# n8nプロキシは {"reply": "..."} を返す
+	if json.has("reply"):
+		reply = str(json["reply"])
 	elif json.has("error"):
-		var err_msg : String = (json["error"] as Dictionary).get("message", str(code))
-		_update_question("エラー (%d): %s" % [code, err_msg])
+		_update_question("エラー: %s" % str(json["error"]))
 		return
 	else:
-		_update_question("エラー (%d): 不明なエラー" % code)
+		_update_question("エラー (%d): %s" % [code, text.substr(0, 80)])
 		return
 
 	_messages.append({"role": "assistant", "content": reply})
 	_parse_reply(reply)
 
 func _parse_reply(reply: String) -> void:
-	# [Q]質問文 を検索
 	var re_q := RegEx.new()
 	re_q.compile("\\[Q\\](.+)")
 	var mq = re_q.search(reply)
 
-	# [PLAYER:name] を検索
 	var re_p := RegEx.new()
 	re_p.compile("\\[PLAYER:([a-zA-Z ]+)\\]")
 	var mp = re_p.search(reply)
 
-	# [ENEMY:name] を検索
 	var re_e := RegEx.new()
 	re_e.compile("\\[ENEMY:([a-zA-Z ]+)\\]")
 	var me = re_e.search(reply)
 
-	# [BG:prompt] を検索（]以外の文字で終わる）
 	var re_bg := RegEx.new()
 	re_bg.compile("\\[BG:([^\\]]+)\\]")
 	var mbg = re_bg.search(reply)
 
 	if _screen == Screen.PLAYER_AKI and mp != null:
-		_player_en = mp.get_string(1).strip_edges()
+		_player_en  = mp.get_string(1).strip_edges()
 		_player_msg = reply.replace(mp.get_string(), "").strip_edges()
 		_show_decision(_player_msg)
 		await get_tree().create_timer(2.5).timeout
 		_start_enemy_akinator()
 	elif _screen == Screen.ENEMY_AKI and me != null:
-		_enemy_en = me.get_string(1).strip_edges()
+		_enemy_en  = me.get_string(1).strip_edges()
 		_enemy_msg = reply.replace(me.get_string(), "").strip_edges()
 		_show_decision(_enemy_msg)
 		await get_tree().create_timer(2.5).timeout
@@ -527,10 +498,16 @@ func _parse_reply(reply: String) -> void:
 		await get_tree().create_timer(2.5).timeout
 		_start_generation()
 	elif mq != null:
+		# [Q]タグ付き質問文だけを表示
 		_update_question(mq.get_string(1).strip_edges())
 	else:
-		# フォールバック：質問として表示
-		_update_question(reply.strip_edges())
+		# フォールバック：最後の行を質問として表示
+		var lines : Array = reply.strip_edges().split("\n")
+		var last : String = ""
+		for line : String in lines:
+			if not line.strip_edges().is_empty():
+				last = line.strip_edges()
+		_update_question(last if not last.is_empty() else reply.strip_edges())
 
 # =====================================================================
 # GENERATING
@@ -616,11 +593,9 @@ func _on_all_generated() -> void:
 	_http_gen.request_completed.disconnect(_on_gen_done)
 	if is_instance_valid(_step_lbl):
 		_step_lbl.text = "スプライトを同期中..."
-
 	var path : String = ProjectSettings.globalize_path("res://")
 	var out   : Array  = []
 	OS.execute("git", ["-C", path, "pull"], out, true)
-
 	var sm : Node = get_node_or_null("/root/SkinManager")
 	if sm:
 		sm.register_skin("custom", {
@@ -636,7 +611,6 @@ func _on_all_generated() -> void:
 		})
 		sm.set_skin("custom")
 		sm.confirm_skin()
-
 	_show_ready()
 
 # =====================================================================
