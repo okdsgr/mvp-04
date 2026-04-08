@@ -16,6 +16,7 @@ const WAVE_DEFINITIONS : Array = [
 const MAX_ENEMIES : int = 200
 const WIN_W       : int = 405
 const WIN_H       : int = 720
+const GENERATE_SKIN_URL : String = "https://okdsgr.app.n8n.cloud/webhook/generate-skin"
 
 var enemy_scene:  PackedScene = preload("res://scenes/enemy.tscn")
 var bullet_scene: PackedScene = preload("res://scenes/soul.tscn")
@@ -40,16 +41,25 @@ var _color_factor   : float = 0.08
 var _type_weights   : Array = [0.85, 0.12, 0.03, 0.00]
 var _wave_duration  : float = 20.0
 
+var _http : HTTPRequest = null
+var _pending_skin_name : String = ""
+var _skin_overlay : Node = null
+var _status_label : Label = null
+
 func _apply_window_size() -> void:
 	DisplayServer.window_set_size(Vector2i(WIN_W, WIN_H))
 	var scr : Vector2i = DisplayServer.screen_get_size()
 	DisplayServer.window_set_position(Vector2i((scr.x - WIN_W) / 2, (scr.y - WIN_H) / 2))
-	print("window: ", DisplayServer.window_get_size())
 
 func _ready() -> void:
 	call_deferred("_apply_window_size")
 	randomize()
 	add_to_group("main")
+
+	# HTTPRequestノード準備
+	_http = HTTPRequest.new()
+	add_child(_http)
+	_http.request_completed.connect(_on_generate_completed)
 
 	var hp_label := Label.new()
 	hp_label.name = "HPLabel"
@@ -86,7 +96,6 @@ func _ready() -> void:
 	wave_msg.add_theme_font_size_override("font_size", 28)
 	$UI.add_child(wave_msg)
 
-	# プレイヤーはスキン選択後に生成するため、ここでは生成しない
 	_show_skin_select()
 
 func _show_skin_select() -> void:
@@ -95,39 +104,143 @@ func _show_skin_select() -> void:
 	overlay.color = Color(0.05, 0.05, 0.1, 0.95)
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	$UI.add_child(overlay)
+	_skin_overlay = overlay
+
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	scroll.offset_top    = 20
+	scroll.offset_bottom = -20
+	overlay.add_child(scroll)
 
 	var vbox := VBoxContainer.new()
-	vbox.set_anchors_preset(Control.PRESET_CENTER)
-	vbox.position = Vector2(-120.0, -80.0)
-	overlay.add_child(vbox)
+	vbox.custom_minimum_size = Vector2(260, 0)
+	var vbox_margin := MarginContainer.new()
+	vbox_margin.add_theme_constant_override("margin_left", 72)
+	vbox_margin.add_theme_constant_override("margin_top", 20)
+	vbox_margin.add_child(vbox)
+	scroll.add_child(vbox_margin)
 
 	var title := Label.new()
 	title.text = "キャラクターを選んでね"
 	title.add_theme_font_size_override("font_size", 18)
 	vbox.add_child(title)
 
-	var sep := Control.new()
-	sep.custom_minimum_size = Vector2(0, 16)
-	vbox.add_child(sep)
+	var sep0 := Control.new()
+	sep0.custom_minimum_size = Vector2(0, 12)
+	vbox.add_child(sep0)
 
-	var skins  : Array = ["default", "cat_car", "dog_cow", "ufo_tv", "cup_cake"]
-	var labels : Array = ["おばけ & 少年", "車 & 猫", "牛 & 犬", "テレビ & UFO", "ケーキ & コップ"]
-	for i: int in skins.size():
-		var skin_name : String = skins[i]
-		var btn := Button.new()
-		btn.text = labels[i]
-		btn.custom_minimum_size = Vector2(240, 48)
-		vbox.add_child(btn)
-		btn.pressed.connect(_on_skin_selected.bind(skin_name, overlay))
+	# 既存スキンボタン
+	var sm : Node = get_node_or_null("/root/SkinManager")
+	if sm:
+		for skin_name in sm.get_all_skin_names():
+			var btn := Button.new()
+			btn.text = sm.get_display_name(skin_name)
+			btn.custom_minimum_size = Vector2(260, 44)
+			vbox.add_child(btn)
+			btn.pressed.connect(_on_skin_selected.bind(skin_name, overlay))
+
+	var sep1 := Control.new()
+	sep1.custom_minimum_size = Vector2(0, 16)
+	vbox.add_child(sep1)
+
+	# 区切り線
+	var divider := Label.new()
+	divider.text = "──── または ────"
+	divider.add_theme_font_size_override("font_size", 12)
+	vbox.add_child(divider)
+
+	var sep2 := Control.new()
+	sep2.custom_minimum_size = Vector2(0, 8)
+	vbox.add_child(sep2)
+
+	# 自由入力エリア
+	var hint := Label.new()
+	hint.text = "好きなキャラを入力して生成！"
+	hint.add_theme_font_size_override("font_size", 13)
+	vbox.add_child(hint)
+
+	var sep3 := Control.new()
+	sep3.custom_minimum_size = Vector2(0, 6)
+	vbox.add_child(sep3)
+
+	var text_input := LineEdit.new()
+	text_input.name = "UserInput"
+	text_input.placeholder_text = "例: 自機をロボットに、敵を宇宙人に"
+	text_input.custom_minimum_size = Vector2(260, 40)
+	vbox.add_child(text_input)
+
+	var sep4 := Control.new()
+	sep4.custom_minimum_size = Vector2(0, 8)
+	vbox.add_child(sep4)
+
+	var gen_btn := Button.new()
+	gen_btn.text = "✨ 生成する（約30秒）"
+	gen_btn.custom_minimum_size = Vector2(260, 44)
+	vbox.add_child(gen_btn)
+	gen_btn.pressed.connect(_on_generate_pressed.bind(text_input, overlay, vbox))
+
+	_status_label = Label.new()
+	_status_label.name = "StatusLabel"
+	_status_label.text = ""
+	_status_label.add_theme_font_size_override("font_size", 13)
+	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status_label.custom_minimum_size = Vector2(260, 0)
+	vbox.add_child(_status_label)
+
+func _on_generate_pressed(text_input: LineEdit, overlay: Node, vbox: VBoxContainer) -> void:
+	var user_text : String = text_input.text.strip_edges()
+	if user_text == "":
+		_status_label.text = "テキストを入力してください"
+		return
+
+	_status_label.text = "🎨 生成中... しばらくお待ちください"
+
+	# n8n webhook にPOST
+	var body := JSON.stringify({"user_text": user_text})
+	var headers := ["Content-Type: application/json"]
+	_http.request(GENERATE_SKIN_URL, headers, HTTPClient.METHOD_POST, body)
+
+func _on_generate_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		_status_label.text = "❌ 生成に失敗しました（code: %d）" % response_code
+		return
+
+	var json := JSON.new()
+	var err := json.parse(body.get_string_from_utf8())
+	if err != OK:
+		_status_label.text = "❌ レスポンスの解析に失敗しました"
+		return
+
+	var data : Dictionary = json.get_data()
+	var skin_name    : String = data.get("skin_name", "")
+	var display_name : String = data.get("display_name", skin_name)
+
+	if skin_name == "":
+		_status_label.text = "❌ skin_nameが取得できませんでした"
+		return
+
+	_status_label.text = "🔄 スプライトを取得中..."
+
+	# git pull してスプライトを取得
+	var path := ProjectSettings.globalize_path("res://")
+	var out := []
+	OS.execute("git", ["-C", path, "pull"], out, true)
+	print("git pull: ", out)
+
+	# SkinManager に動的スキン登録
+	var sm : Node = get_node_or_null("/root/SkinManager")
+	if sm:
+		sm.register_dynamic_skin(skin_name, display_name)
+		_on_skin_selected(skin_name, _skin_overlay)
+	else:
+		_status_label.text = "❌ SkinManagerが見つかりません"
 
 func _on_skin_selected(skin_name: String, overlay: Node) -> void:
-	# スキンをセット
 	var sm : Node = get_node_or_null("/root/SkinManager")
 	if sm:
 		sm.set_skin(skin_name)
 	overlay.queue_free()
 
-	# スキン確定後にプレイヤーを生成 → _ready() でSkinManagerから正しいテクスチャを取得できる
 	var rect : Rect2 = get_viewport_rect()
 	var p : CharacterBody2D = player_scene.instantiate()
 	p.position = Vector2(rect.size.x * 0.5, rect.size.y * 0.82)
