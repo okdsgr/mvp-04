@@ -233,10 +233,10 @@ func _on_start_default() -> void:
 		tw.tween_property(sub_lbl,  "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_SINE)
 		tw.tween_interval(1.5)
 		tw.tween_property(overlay, "modulate:a", 0.0, 0.5).set_trans(Tween.TRANS_SINE)
-		tw.tween_callback(func():
+		var _cb_done := func():
 			overlay.queue_free()
 			on_done.call()
-		)
+		tw.tween_callback(_cb_done)
 	
 	# =====================================================================
 # AKINATOR 共通UI
