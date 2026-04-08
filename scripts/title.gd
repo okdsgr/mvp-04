@@ -2,7 +2,7 @@ extends Node2D
 
 const GAME_TITLE   : String = "GROSBREAK"
 const N8N_URL      : String = "https://okdsgr.app.n8n.cloud/webhook/sprite-to-mvp04"
-const CLAUDE_URL   : String = "https://api.anthropic.com/v1/messages"
+const CLAUDE_URL   : String = "https://okdsgr.app.n8n.cloud/webhook/akinator-claude"
 const CLAUDE_MODEL : String = "claude-sonnet-4-6"
 const VP_W         : float  = 540.0
 const VP_H         : float  = 960.0
