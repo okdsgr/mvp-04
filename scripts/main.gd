@@ -1,323 +1,186 @@
 extends Node2D
 
-const WAVE_DEFINITIONS : Array = [
-	[2.0, 2, 0.08, [0.85, 0.12, 0.03, 0.00], 20],
-	[1.8, 2, 0.10, [0.78, 0.18, 0.04, 0.00], 20],
-	[1.5, 3, 0.14, [0.65, 0.25, 0.08, 0.02], 25],
-	[1.3, 3, 0.22, [0.55, 0.28, 0.12, 0.05], 25],
-	[1.1, 3, 0.32, [0.45, 0.30, 0.18, 0.07], 30],
-	[0.9, 4, 0.42, [0.38, 0.30, 0.22, 0.10], 30],
-	[0.8, 4, 0.55, [0.30, 0.28, 0.28, 0.14], 35],
-	[0.7, 5, 0.68, [0.25, 0.28, 0.30, 0.17], 35],
-	[0.6, 5, 0.80, [0.20, 0.25, 0.35, 0.20], 999],
-]
+# =====================================================================
+# SUMERAGI - MVP-05
+# Turn-based battle: What beats what?
+# =====================================================================
 
-const MAX_ENEMIES : int = 200
-const WIN_W       : int = 405
-const WIN_H       : int = 720
-const BG_SCROLL_SPEED : float = 40.0
+const WIN_W  : int    = 405
+const WIN_H  : int    = 720
+const N8N    : String = "https://okdsgr.app.n8n.cloud/webhook/"
+const CLAUDE : String = "https://okdsgr.app.n8n.cloud/webhook/akinator-claude"
 
-var enemy_scene:  PackedScene = preload("res://scenes/enemy.tscn")
-var bullet_scene: PackedScene = preload("res://scenes/soul.tscn")
-var player_scene: PackedScene = preload("res://scenes/player.tscn")
+enum Phase { INIT, CPU_TURN, PLAYER_INPUT, BATTLE, RESULT }
+var _phase : Phase = Phase.INIT
 
-var score            : int   = 0
-var _timer           : float = 0.0
-var _color_balance   : int   = 0
-var combo_count      : int   = 0
-var combo_last_white : bool  = true
-var combo_multiplier : float = 1.0
+var _http      : HTTPRequest = null
+var _ui        : CanvasLayer = null
 
-var current_wave      : int   = 0
-var _wave_timer       : float = 0.0
-var _in_wave_break    : bool  = false
-var _wave_break_timer : float = 0.0
-const WAVE_BREAK_DURATION : float = 3.0
-
-var _spawn_interval : float = 2.0
-var _spawn_batch    : int   = 2
-var _color_factor   : float = 0.08
-var _type_weights   : Array = [0.85, 0.12, 0.03, 0.00]
-var _wave_duration  : float = 20.0
-
-# 背景スクロール
-var _bg_sprites : Array = []
-
-func _apply_window_size() -> void:
-	DisplayServer.window_set_size(Vector2i(WIN_W, WIN_H))
-	var scr : Vector2i = DisplayServer.screen_get_size()
-	DisplayServer.window_set_position(Vector2i((scr.x - WIN_W) / 2, (scr.y - WIN_H) / 2))
-	print("window: ", DisplayServer.window_get_size())
+var _cpu_entity    : String = ""   # CPU が出したもの（例: frog）
+var _player_entity : String = ""   # プレイヤーが入力したもの（例: snake）
+var _battle_log    : Array  = []   # バトルの演出テキスト
+var _round         : int    = 0
 
 func _ready() -> void:
-	call_deferred("_apply_window_size")
-	randomize()
-	add_to_group("main")
+	DisplayServer.window_set_size(Vector2i(WIN_W, WIN_H))
+	var scr := DisplayServer.screen_get_size()
+	DisplayServer.window_set_position(Vector2i((scr.x - WIN_W) / 2, (scr.y - WIN_H) / 2))
+	RenderingServer.set_default_clear_color(Color(0.06, 0.06, 0.12))
 
-	var hp_label := Label.new()
-	hp_label.name = "HPLabel"
-	hp_label.position = Vector2(10, 36)
-	hp_label.text = "HP: 3"
-	$UI.add_child(hp_label)
+	_ui = $UI
+	_http = HTTPRequest.new()
+	_http.timeout = 30.0
+	add_child(_http)
 
-	var combo_label := Label.new()
-	combo_label.name = "ComboLabel"
-	combo_label.position = Vector2(10, 62)
-	combo_label.text = ""
-	$UI.add_child(combo_label)
+	_show_title()
 
-	var mult_label := Label.new()
-	mult_label.name = "MultLabel"
-	mult_label.position = Vector2(10, 88)
-	mult_label.text = ""
-	$UI.add_child(mult_label)
+func _show_title() -> void:
+	_clear_ui()
+	var lbl := Label.new()
+	lbl.text = "SUMERAGI"
+	lbl.add_theme_font_size_override("font_size", 60)
+	lbl.add_theme_color_override("font_color", Color(0.9, 0.85, 0.6))
+	lbl.position = Vector2(60, 260)
+	_ui.add_child(lbl)
 
-	var wave_label := Label.new()
-	wave_label.name = "WaveLabel"
-	wave_label.position = Vector2(10, 114)
-	wave_label.text = "WAVE 1"
-	$UI.add_child(wave_label)
+	var sub := Label.new()
+	sub.text = "すめらぎ"
+	sub.add_theme_font_size_override("font_size", 22)
+	sub.add_theme_color_override("font_color", Color(0.7, 0.65, 0.45, 0.85))
+	sub.position = Vector2(140, 350)
+	_ui.add_child(sub)
 
-	var wave_msg := Label.new()
-	wave_msg.name          = "WaveMsg"
-	wave_msg.anchor_left   = 0.5
-	wave_msg.anchor_right  = 0.5
-	wave_msg.anchor_top    = 0.5
-	wave_msg.anchor_bottom = 0.5
-	wave_msg.position      = Vector2(-80.0, -60.0)
-	wave_msg.visible       = false
-	wave_msg.add_theme_font_size_override("font_size", 28)
-	$UI.add_child(wave_msg)
+	var btn := Button.new()
+	btn.text = "▶  ゲーム開始"
+	btn.custom_minimum_size = Vector2(280, 64)
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.position = Vector2(62, 520)
+	_ui.add_child(btn)
+	btn.pressed.connect(_start_game)
 
-	var sm : Node = get_node_or_null("/root/SkinManager")
-	if sm and sm.skin_confirmed:
-		_spawn_player()
-		_start_wave(0)
-	else:
-		_show_skin_select()
+func _start_game() -> void:
+	_round = 0
+	_battle_log = []
+	_cpu_turn()
 
-# ===== プレイヤー生成 =====
-func _spawn_player() -> void:
-	# 背景をプレイヤーより先に追加（後ろに表示）
-	var sm : Node = get_node_or_null("/root/SkinManager")
-	if sm:
-		var bg_tex : Texture2D = sm.get_texture("bg")
-		if bg_tex:
-			_setup_bg(bg_tex)
+func _cpu_turn() -> void:
+	_phase = Phase.CPU_TURN
+	_round += 1
+	_clear_ui()
+	_show_status("CPUが考えています…")
+	# TODO: n8n cpu-generate エンドポイントを呼ぶ
+	# 仮実装：固定リスト
+	var options := ["frog", "snake", "slug", "hawk", "mouse"]
+	_cpu_entity = options[randi() % options.size()]
+	await get_tree().create_timer(1.0).timeout
+	_player_input_phase()
 
-	var rect : Rect2 = get_viewport_rect()
-	var p : CharacterBody2D = player_scene.instantiate()
-	p.position = Vector2(rect.size.x * 0.5, rect.size.y * 0.82)
-	add_child(p)
+func _player_input_phase() -> void:
+	_phase = Phase.PLAYER_INPUT
+	_clear_ui()
 
-# ===== 背景スクロール =====
-func _setup_bg(tex: Texture2D) -> void:
-	var rect  : Rect2  = get_viewport_rect()
-	var scale : float  = rect.size.x / float(tex.get_width())
-	var loop_h: float  = tex.get_height() * scale
+	var cpu_lbl := Label.new()
+	cpu_lbl.text = "CPU: %s" % _cpu_entity.to_upper()
+	cpu_lbl.add_theme_font_size_override("font_size", 32)
+	cpu_lbl.add_theme_color_override("font_color", Color(1.0, 0.5, 0.4))
+	cpu_lbl.position = Vector2(20, 40)
+	_ui.add_child(cpu_lbl)
 
-	for i: int in 2:
-		var sp := Sprite2D.new()
-		sp.texture  = tex
-		sp.centered = false
-		sp.scale    = Vector2(scale, scale)
-		sp.position = Vector2(0.0, float(i) * loop_h - loop_h)
-		add_child(sp)
-		move_child(sp, 0)
-		_bg_sprites.append(sp)
+	var prompt_lbl := Label.new()
+	prompt_lbl.text = "「%s」に勝てるものを入力してください" % _cpu_entity
+	prompt_lbl.add_theme_font_size_override("font_size", 16)
+	prompt_lbl.add_theme_color_override("font_color", Color(0.8, 0.85, 1.0))
+	prompt_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	prompt_lbl.custom_minimum_size = Vector2(360, 0)
+	prompt_lbl.position = Vector2(20, 100)
+	_ui.add_child(prompt_lbl)
 
-func _scroll_bg(delta: float) -> void:
-	if _bg_sprites.is_empty():
+	var input := LineEdit.new()
+	input.name = "PlayerInput"
+	input.placeholder_text = "例: ヘビ、タカ、塩..."
+	input.custom_minimum_size = Vector2(300, 52)
+	input.add_theme_font_size_override("font_size", 18)
+	input.position = Vector2(20, 560)
+	_ui.add_child(input)
+
+	var btn := Button.new()
+	btn.text = "決定"
+	btn.custom_minimum_size = Vector2(80, 52)
+	btn.add_theme_font_size_override("font_size", 18)
+	btn.position = Vector2(325, 560)
+	_ui.add_child(btn)
+	btn.pressed.connect(_on_player_submit)
+	input.text_submitted.connect(func(_t): _on_player_submit())
+
+func _on_player_submit() -> void:
+	var input_node := _ui.get_node_or_null("PlayerInput")
+	if input_node == null:
 		return
-	var first : Sprite2D = _bg_sprites[0] as Sprite2D
-	if not is_instance_valid(first):
+	var text : String = (input_node as LineEdit).text.strip_edges()
+	if text.is_empty():
 		return
-	var loop_h : float = first.texture.get_height() * first.scale.y
-	var rect   : Rect2 = get_viewport_rect()
-	for sp in _bg_sprites:
-		if not is_instance_valid(sp):
-			continue
-		(sp as Sprite2D).position.y += BG_SCROLL_SPEED * delta
-		if (sp as Sprite2D).position.y >= rect.size.y:
-			(sp as Sprite2D).position.y -= loop_h * 2.0
+	_player_entity = text
+	_battle_phase()
 
-# ===== スキン選択（タイトルから来ない場合のフォールバック） =====
-func _show_skin_select() -> void:
-	var overlay := ColorRect.new()
-	overlay.name  = "SkinOverlay"
-	overlay.color = Color(0.05, 0.05, 0.1, 0.95)
-	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	$UI.add_child(overlay)
+func _battle_phase() -> void:
+	_phase = Phase.BATTLE
+	_clear_ui()
+	_show_status("バトル判定中…")
+	# TODO: n8n battle-judge エンドポイントを呼ぶ
+	await get_tree().create_timer(1.5).timeout
+	# 仮結果
+	_show_battle_result("PLAYER WIN", [
+		"%s が現れた！" % _player_entity,
+		"%s は %s を前に固まった…" % [_cpu_entity, _player_entity],
+		"%s の勝利！" % _player_entity,
+	], true)
 
-	var vbox := VBoxContainer.new()
-	vbox.set_anchors_preset(Control.PRESET_CENTER)
-	vbox.position = Vector2(-130.0, -120.0)
-	vbox.add_theme_constant_override("separation", 14)
-	overlay.add_child(vbox)
+func _show_battle_result(headline: String, log: Array, player_wins: bool) -> void:
+	_phase = Phase.RESULT
+	_clear_ui()
 
-	var title := Label.new()
-	title.text = "キャラクターを選んでね"
-	title.add_theme_font_size_override("font_size", 18)
-	vbox.add_child(title)
+	var h := Label.new()
+	h.text = headline
+	h.add_theme_font_size_override("font_size", 36)
+	h.add_theme_color_override("font_color", Color(0.4, 1.0, 0.6) if player_wins else Color(1.0, 0.4, 0.4))
+	h.position = Vector2(20, 40)
+	_ui.add_child(h)
 
-	var sep := Control.new()
-	sep.custom_minimum_size = Vector2(0, 10)
-	vbox.add_child(sep)
+	var y := 110.0
+	for line : String in log:
+		var l := Label.new()
+		l.text = line
+		l.add_theme_font_size_override("font_size", 17)
+		l.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD
+		l.custom_minimum_size = Vector2(360, 0)
+		l.position = Vector2(20, y)
+		_ui.add_child(l)
+		y += 56.0
 
-	var skins  : Array = ["default", "cat_car", "dog_cow", "ufo_tv", "cup_cake"]
-	var labels : Array = ["おばけ & 少年", "車 & 猫", "牛 & 犬", "テレビ & UFO", "ケーキ & コップ"]
-	for i: int in skins.size():
-		var btn := Button.new()
-		btn.text = labels[i]
-		btn.custom_minimum_size = Vector2(260, 46)
-		vbox.add_child(btn)
-		btn.pressed.connect(_on_skin_selected.bind(skins[i], overlay))
+	var next_btn := Button.new()
+	next_btn.text = "次のラウンド ▶"
+	next_btn.custom_minimum_size = Vector2(280, 60)
+	next_btn.add_theme_font_size_override("font_size", 18)
+	next_btn.position = Vector2(62, 580)
+	_ui.add_child(next_btn)
+	next_btn.pressed.connect(_cpu_turn)
 
-func _on_skin_selected(skin_name: String, overlay: Node) -> void:
-	var sm : Node = get_node_or_null("/root/SkinManager")
-	if sm:
-		sm.set_skin(skin_name)
-		sm.confirm_skin()
-	overlay.queue_free()
-	_spawn_player()
-	_start_wave(0)
+func _show_status(msg: String) -> void:
+	_clear_ui()
+	var lbl := Label.new()
+	lbl.text = msg
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_color_override("font_color", Color(0.7, 0.75, 1.0))
+	lbl.position = Vector2(60, 320)
+	_ui.add_child(lbl)
 
-# ===== WAVE =====
-func _start_wave(wave_idx: int) -> void:
-	current_wave   = wave_idx
-	_wave_timer    = 0.0
-	_color_balance = 0
+func _clear_ui() -> void:
+	for c : Node in _ui.get_children():
+		c.queue_free()
 
-	var def_idx : int = mini(wave_idx, WAVE_DEFINITIONS.size() - 1)
-	var def     : Array = WAVE_DEFINITIONS[def_idx]
-	_spawn_interval = def[0]
-	_spawn_batch    = def[1]
-	_color_factor   = def[2]
-	_type_weights   = def[3]
-	_wave_duration  = float(def[4])
-
-	$UI/WaveLabel.text = "WAVE %d" % (current_wave + 1)
-	_show_wave_message("WAVE %d" % (current_wave + 1))
-
-	for i: int in _spawn_batch:
-		_spawn_enemy()
-
-func _process(delta: float) -> void:
-	_scroll_bg(delta)
-
-	if _in_wave_break:
-		_wave_break_timer += delta
-		if _wave_break_timer >= WAVE_BREAK_DURATION:
-			_in_wave_break = false
-			_start_wave(current_wave + 1)
-		return
-
-	_wave_timer += delta
-	_timer      += delta
-
-	if _wave_timer >= _wave_duration:
-		_begin_wave_break()
-		return
-
-	if _timer >= _spawn_interval:
-		_timer = 0.0
-		var count    : int = $Enemies.get_child_count()
-		var to_spawn : int = mini(_spawn_batch, MAX_ENEMIES - count)
-		for i: int in to_spawn:
-			_spawn_enemy()
-
-	var remaining : float = maxf(_wave_duration - _wave_timer, 0.0)
-	$UI/WaveLabel.text = "WAVE %d  %d" % [current_wave + 1, int(remaining) + 1]
-
-func _begin_wave_break() -> void:
-	_in_wave_break    = true
-	_wave_break_timer = 0.0
-	_timer            = 0.0
-	for e : Node in $Enemies.get_children():
-		e.queue_free()
-	for s : Node in $Souls.get_children():
-		s.queue_free()
-	_show_wave_message("WAVE CLEAR!")
-
-func _show_wave_message(msg: String) -> void:
-	var lbl : Label = $UI/WaveMsg
-	lbl.text    = msg
-	lbl.visible = true
-	get_tree().create_timer(2.0).timeout.connect(func(): lbl.visible = false)
-
-func _pick_is_white() -> bool:
-	var white_prob : float = 0.5 - float(_color_balance) * _color_factor
-	white_prob = clamp(white_prob, 0.05, 0.95)
-	var result : bool = randf() < white_prob
-	_color_balance += 1 if result else -1
-	return result
-
-func _pick_enemy_type() -> int:
-	var roll : float = randf()
-	var cum  : float = 0.0
-	for i: int in _type_weights.size():
-		cum += _type_weights[i]
-		if roll < cum:
-			return i
-	return 0
-
-func _spawn_enemy() -> void:
-	var rect : Rect2 = get_viewport_rect()
-	var e : CharacterBody2D = enemy_scene.instantiate()
-	e.is_white   = _pick_is_white()
-	e.enemy_type = _pick_enemy_type()
-	e.position   = Vector2(
-		randf_range(60.0, rect.size.x - 60.0),
-		randf_range(-80.0, -10.0)
-	)
-	$Enemies.add_child(e)
-
-	var bullet_count : int = 2 if e.enemy_type == 1 else 1
-	for bi: int in bullet_count:
-		var b : Area2D = bullet_scene.instantiate()
-		b.is_white     = e.is_white
-		$Souls.add_child(b)
-		b.orbit_center = e
-		b.orbit_angle  = float(bi) * (TAU / float(bullet_count))
-		b.state        = b.State.ORBITING_ENEMY
-
-func on_enemy_died(enemy: Node) -> void:
-	var killed_white : bool = enemy.is_white
-	if combo_count == 0 or killed_white == combo_last_white:
-		combo_count += 1
-	else:
-		combo_count = 1
-	combo_last_white = killed_white
-	combo_multiplier = 1.0 + float(combo_count - 1) * 0.5
-
-	var base_score : int = 10
-	if enemy.enemy_type == 2:
-		base_score = 25
-	elif enemy.enemy_type == 1:
-		base_score = 15
-	elif enemy.enemy_type == 3:
-		base_score = 20
-
-	var gain : int = int(float(base_score) * combo_multiplier)
-	score = score + gain
-	$UI/ScoreLabel.text = "Score: %d" % score
-	_update_combo_ui()
-
-func break_combo() -> void:
-	if combo_count > 0:
-		combo_count      = 0
-		combo_multiplier = 1.0
-		_update_combo_ui()
-
-func _update_combo_ui() -> void:
-	var combo_label : Label = $UI/ComboLabel
-	var mult_label  : Label = $UI/MultLabel
-	if combo_count >= 2:
-		combo_label.text = "Combo x%d" % combo_count
-		mult_label.text  = "x%.1f" % combo_multiplier
-	else:
-		combo_label.text = ""
-		mult_label.text  = ""
-
-func update_hp(hp: int) -> void:
-	$UI/HPLabel.text = "HP: %d" % hp
+func _post_json(url: String, body: Dictionary, callback: Callable) -> void:
+	if _http.request_completed.is_connected(callback):
+		_http.request_completed.disconnect(callback)
+	_http.request_completed.connect(callback, CONNECT_ONE_SHOT)
+	_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, JSON.stringify(body))
